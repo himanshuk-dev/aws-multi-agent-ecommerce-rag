@@ -676,12 +676,25 @@ def build_policy_agent() -> Agent:
     PARALLEL, each querying its own Knowledge Base. The coordinator synthesizes
     the combined results into a complete, grounded policy answer.
     """
-
-    # TODO: Build ReturnsPolicyRetrieverAgent
+    
     @tool
     def retrieve_returns_policy(query: str) -> str:
         """Retrieve relevant passages from the Returns Policy knowledge base."""
-        pass
+        if not query.strip():
+            return "A policy question is required."
+
+        try:
+            results = retrieve_from_knowledge_base(
+                kb_id=config.RETURNS_KB_ID,
+                query=query,
+                top_k=3,
+            )
+
+            return format_kb_results(results)
+
+        except Exception:
+            logger.exception("Returns policy retrieval failed")
+            return "Unable to retrieve the returns policy at this time."
 
     # Create the ReturnsPolicyRetrieverAgent with the tool above
     pass
