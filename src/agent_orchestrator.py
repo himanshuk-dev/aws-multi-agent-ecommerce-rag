@@ -867,8 +867,11 @@ def build_policy_agent() -> Agent:
 
         return combined_results
 
-    # TODO: Create a BedrockModel for the PolicyAgent coordinator
-    pass
+    model = BedrockModel(
+        model_id=config.WORKER_MODEL_ID,
+        region_name=config.AWS_REGION,
+        temperature=0.1,
+    )
 
     # TODO: System prompt for PolicyAgent coordinator
     pass
