@@ -676,7 +676,7 @@ def build_policy_agent() -> Agent:
     PARALLEL, each querying its own Knowledge Base. The coordinator synthesizes
     the combined results into a complete, grounded policy answer.
     """
-    
+
     @tool
     def retrieve_returns_policy(query: str) -> str:
         """Retrieve relevant passages from the Returns Policy knowledge base."""
@@ -696,8 +696,23 @@ def build_policy_agent() -> Agent:
             logger.exception("Returns policy retrieval failed")
             return "Unable to retrieve the returns policy at this time."
 
-    # Create the ReturnsPolicyRetrieverAgent with the tool above
-    pass
+    returns_retriever = Agent(
+        model=BedrockModel(
+            model_id=config.WORKER_MODEL_ID,
+            region_name=config.AWS_REGION,
+            temperature=0.1,
+        ),
+        system_prompt=(
+            "You are the Returns Policy Retriever Agent for NovaMart. "
+            "Use retrieve_returns_policy to find relevant information in the "
+            "Returns Policy Knowledge Base. "
+            "Base your answers only on retrieved policy passages. "
+            "Preserve relevant source references. "
+            "Do not invent policies, exceptions, or eligibility rules. "
+            "If retrieval fails or no relevant policy is found, clearly say so."
+        ),
+        tools=[retrieve_returns_policy],
+    )
 
     # TODO: Build ShippingPolicyRetrieverAgent
     @tool
