@@ -275,12 +275,32 @@ def build_inventory_agent() -> Agent:
     Gathers order and customer facts from DynamoDB. Does NOT make decisions -
     only retrieves data for the OrchestratorAgent to share with downstream agents.
     """
+    # Create a BedrockModel using the WORKER model
+    model = BedrockModel(
+        model_id=config.WORKER_MODEL_ID,
+        region_name=config.AWS_REGION,
+        temperature=0.1,
+    )
 
-    # TODO: Create a BedrockModel using the WORKER model
-    pass
+    # System prompt for the Inventory Agent
+    system_prompt = """
+    You are the Inventory Agent for NovaMart customer support.
 
-    # TODO: System prompt for the Inventory Agent
-    pass
+    Your responsibilities:
+    - Retrieve accurate order information using available tools.
+    - Retrieve customer membership tiers.
+    - List orders belonging to a customer.
+    - Report order status, purchase date, and amount when available.
+
+    Rules:
+    - Use DynamoDB-backed tools as the source of truth.
+    - Never invent order details or customer information.
+    - Do not approve refunds or make refund eligibility decisions.
+    - Do not modify order records.
+    - If an order or customer cannot be found, clearly report that.
+    - Only return information associated with the authorized customer.
+    - Provide concise, structured results for the orchestrator.
+    """
 
     # TODO: Implement check_order_status tool
     pass
