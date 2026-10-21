@@ -837,16 +837,35 @@ def build_policy_agent() -> Agent:
                 logger.exception("Policy retrieval failed for %s", domain)
                 return domain, "Policy retrieval failed."
 
-        # Use ThreadPoolExecutor to run all three retrievers in parallel
-        # Collect results into a dict: {'Returns': '...', 'Shipping': '...', ...}
+        results = {}
 
-        # ── Trace: all KBs responded - print each result sequentially ─────
-        # trace.kb_done(len(retrievers))
-        # for domain in ['Returns', 'Shipping', 'Warranty']:
-        #     trace.kb_result(domain, results.get(domain, '[No results]'))
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(_run_retriever, domain, agent, query): domain
+                for domain, agent in retrievers.items()
+            }
 
-        # Combine results from all three domains and return
-        pass
+            for future in as_completed(futures):
+                domain = futures[future]
+
+                try:
+                    result_domain, result_text = future.result()
+                    results[result_domain] = result_text
+                except Exception:
+                    logger.exception("Unexpected retriever failure for %s", domain)
+                    results[domain] = "Policy retrieval failed."
+
+        trace.kb_done(len(retrievers))
+
+        for domain in ["Returns", "Shipping", "Warranty"]:
+            trace.kb_result(domain, results.get(domain, "[No results]"))
+
+        combined_results = "\n\n".join(
+            f"=== {domain} Policy ===\n{results.get(domain, '[No results]')}"
+            for domain in ["Returns", "Shipping", "Warranty"]
+        )
+
+        return combined_results
 
     # TODO: Create a BedrockModel for the PolicyAgent coordinator
     pass
