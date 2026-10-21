@@ -426,7 +426,19 @@ def build_inventory_agent() -> Agent:
                 "message": "Unable to retrieve customer orders.",
                 "error_type": type(exc).__name__,
             }
+    
+    # Instantiate the Inventory Agent with its tools
+    inventory_agent = Agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=[
+            check_order_status,
+            get_customer_tier,
+            list_customer_orders,
+        ],
+    )
 
+    return inventory_agent
 
 # ───────────────────────────────────────────────────────
 #  2.B - REFUND AGENT
