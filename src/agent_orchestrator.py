@@ -971,6 +971,22 @@ def build_communication_agent() -> Agent:
     clearly identify it as test data rather than confirmed company policy.
     - When eligibility is unknown, say that it has not yet been verified.
     - State only actions explicitly confirmed as completed in the workflow.
+
+    - Never infer the start date of a return window from an order's
+    delivery status. Use only the start date explicitly established
+    by verified policy evidence.
+    - When refund_agent.status is "not_processed", state only:
+    "No refund has been processed."
+    - Never translate refund status into return-request status.
+    Do not claim a return was initiated, not initiated, completed,
+    or cancelled unless a separate verified field confirms it.
+    - Do not identify delivery date as the return-window starting
+    point unless verified policy evidence explicitly confirms it.
+    - Do not direct customers to specific portals, departments,
+    shipping procedures, or return authorization processes unless
+    those options are confirmed by verified workflow findings.
+    - When next steps are unverified, state what information still
+    needs to be checked instead of inventing a procedure.
     """
 
     @tool
