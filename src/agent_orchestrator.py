@@ -1157,7 +1157,6 @@ def build_orchestrator_agent(
             logger.exception("Inventory Agent routing failed")
             return "Error: Unable to retrieve or save inventory findings."
 
-    # TODO: Implement route_to_policy_agent
     @tool
     def route_to_policy_agent(session_id: str, request: str) -> str:
         """
@@ -1171,7 +1170,43 @@ def build_orchestrator_agent(
         Returns:
             Policy information retrieved and synthesized by PolicyAgent
         """
-        pass
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (session_id, request)
+        ):
+            return "Error: Session ID and policy request are required."
+
+        session_id = session_id.strip()
+        request = request.strip()
+
+        try:
+            state = _read_workflow_state(session_id)
+
+            if state is None:
+                return "Error: Initialize the workflow session first."
+
+            response = policy_agent(
+                f"Customer request: {request}\n"
+                "Retrieve relevant NovaMart policy information using "
+                "the available policy retrieval tools. "
+                "Use only verified retrieved evidence. "
+                "If policy information cannot be verified, "
+                "clearly explain the limitation."
+            )
+
+            findings = str(response)
+
+            _update_workflow_state(
+                session_id,
+                {"policy_agent": findings},
+                expected_version=int(state["version"]),
+            )
+
+            return findings
+
+        except Exception:
+            logger.exception("Policy Agent routing failed")
+            return "Error: Unable to retrieve or save policy findings."
 
     # TODO: Implement route_to_refund_agent
     @tool
