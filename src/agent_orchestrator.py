@@ -972,7 +972,39 @@ def build_communication_agent() -> Agent:
         Returns:
             Full WorkflowState dict (inventory_agent, policy_agent, refund_agent)
         """
-        pass
+        if not session_id or not session_id.strip():
+            return {
+                "success": False,
+                "message": "A valid session ID is required.",
+            }
+
+        try:
+            state = _read_workflow_state(session_id.strip())
+
+            if state is None:
+                return {
+                    "success": False,
+                    "message": "Workflow session not found.",
+                }
+
+            return {
+                "success": True,
+                "session_id": state.get("session_id"),
+                "customer_id": state.get("customer_id"),
+                "inventory_agent": state.get("inventory_agent"),
+                "policy_agent": state.get("policy_agent"),
+                "refund_agent": state.get("refund_agent"),
+            }
+
+        except Exception:
+            logger.exception(
+                "Failed to retrieve workflow context for session %s",
+                session_id,
+            )
+            return {
+                "success": False,
+                "message": "Unable to retrieve workflow context.",
+            }
 
     # TODO: Instantiate and return the Agent
     pass
