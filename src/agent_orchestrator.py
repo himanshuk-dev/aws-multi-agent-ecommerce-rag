@@ -527,7 +527,6 @@ def build_refund_agent() -> Agent:
                 "message": "Unable to retrieve inventory context at this time.",
             }
 
-    # TODO: Implement initiate_refund
     @tool
     def initiate_refund(customer_id: str, order_id: str, reason: str) -> dict:
         """
@@ -541,7 +540,63 @@ def build_refund_agent() -> Agent:
         Returns:
             Confirmation dict with return_reference number and instructions
         """
-        pass
+        try:
+            if not customer_id.strip() or not order_id.strip() or not reason.strip():
+                return {
+                    "success": False,
+                    "message": "Customer ID, order ID, and return reason are required.",
+                }
+
+            table = dynamodb.Table(config.ORDERS_TABLE)
+
+            response = table.get_item(
+                Key={
+                    "customer_id": customer_id,
+                    "order_id": order_id,
+                },
+                ConsistentRead=True,
+            )
+
+            order = response.get("Item")
+
+            if not order:
+                return {
+                    "success": False,
+                    "message": "Order not found for this customer.",
+                }
+
+            if order.get("status") == "return_requested":
+                return {
+                    "success": False,
+                    "message": "A return has already been requested for this order.",
+                }
+
+            if order.get("status") != "delivered":
+                return {
+                    "success": False,
+                    "message": "Only delivered orders can be returned.",
+                }
+
+            if str(order.get("return_eligible", "")).lower() != "true":
+                return {
+                    "success": False,
+                    "message": "This order is not marked as return eligible.",
+                }
+
+            return {
+                "success": False,
+                "message": (
+                    "Order passed preliminary checks. Return processing is not "
+                    "implemented yet; no changes were made."
+                ),
+            }
+
+        except Exception:
+            logger.exception("Failed to validate return request")
+            return {
+                "success": False,
+                "message": "Unable to validate the return request at this time.",
+            }
 
     # TODO: Instantiate and return the Agent
     pass
