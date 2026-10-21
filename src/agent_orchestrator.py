@@ -774,8 +774,24 @@ def build_policy_agent() -> Agent:
             logger.exception("Warranty policy retrieval failed")
             return "Unable to retrieve the warranty policy at this time."
 
-    # Create the WarrantyPolicyRetrieverAgent with the tool above
-    pass
+    warranty_retriever = Agent(
+        model=BedrockModel(
+            model_id=config.WORKER_MODEL_ID,
+            region_name=config.AWS_REGION,
+            temperature=0.1,
+        ),
+        system_prompt=(
+            "You are the Warranty Policy Retriever Agent for NovaMart. "
+            "Use retrieve_warranty_policy to retrieve relevant information "
+            "from the Warranty Policy Knowledge Base. "
+            "Answer questions only using retrieved policy passages. "
+            "Preserve relevant source references. "
+            "Do not invent warranty periods, coverage terms, exclusions, "
+            "or eligibility requirements. "
+            "If retrieval fails or no relevant policy is found, clearly say so."
+        ),
+        tools=[retrieve_warranty_policy],
+    )
 
     # TODO: Implement search_all_policies - parallel RAG retrieval tool
     @tool
