@@ -1106,7 +1106,6 @@ def build_orchestrator_agent(
     new unsupported claims.
     """
 
-    # TODO: Implement route_to_inventory_agent
     @tool
     def route_to_inventory_agent(session_id: str, customer_id: str, request: str) -> str:
         """
@@ -1121,7 +1120,42 @@ def build_orchestrator_agent(
         Returns:
             Inventory facts retrieved by the InventoryAgent
         """
-        pass
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (session_id, customer_id, request)
+        ):
+            return "Error: Session ID, customer ID, and request are required."
+
+        try:
+            state = _read_workflow_state(session_id)
+
+            if state is None:
+                return "Error: Initialize the workflow session first."
+
+            if state.get("customer_id") != customer_id:
+                return "Error: Customer ID does not match the workflow session."
+
+            response = inventory_agent(
+                f"Customer ID: {customer_id}\n"
+                f"Session ID: {session_id}\n"
+                f"Customer request: {request}\n"
+                "Retrieve relevant order and customer facts using your tools. "
+                "Do not invent missing information."
+            )
+
+            findings = str(response)
+
+            _update_workflow_state(
+                session_id,
+                {"inventory_agent": findings},
+                expected_version=int(state["version"]),
+            )
+
+            return findings
+
+        except Exception:
+            logger.exception("Inventory Agent routing failed")
+            return "Error: Unable to retrieve or save inventory findings."
 
     # TODO: Implement route_to_policy_agent
     @tool
@@ -1174,7 +1208,6 @@ def build_orchestrator_agent(
         """
         pass
 
-    # TODO: Implement initialize_session
     @tool
     def initialize_session(session_id: str, customer_id: str) -> str:
         """
