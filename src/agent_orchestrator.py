@@ -1379,8 +1379,20 @@ def build_orchestrator_agent(
             logger.exception("Failed to initialize workflow session")
             return "Error: Unable to initialize workflow session."
 
-    # TODO: Instantiate and return the OrchestratorAgent
-    pass
+    # Instantiate and return the OrchestratorAgent
+    orchestrator_agent = Agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=[
+            initialize_session,
+            route_to_inventory_agent,
+            route_to_policy_agent,
+            route_to_refund_agent,
+            route_to_communication_agent,
+        ],
+    )
+
+    return orchestrator_agent
 
 
 # ═══════════════════════════════════════════════════════
