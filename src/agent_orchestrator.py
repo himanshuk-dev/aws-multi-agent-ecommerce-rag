@@ -384,8 +384,6 @@ def build_inventory_agent() -> Agent:
                 "error_type": type(exc).__name__,
             }
 
-
-    # TODO: Implement list_customer_orders
     @tool
     def list_customer_orders(customer_id: str) -> dict:
         """
@@ -397,10 +395,37 @@ def build_inventory_agent() -> Agent:
         Returns:
             List of all orders with order_id, status, order_date, and amount
         """
-        pass
+        try:
+            table = dynamodb.Table(config.ORDERS_TABLE)
 
-    # TODO: Instantiate and return the Agent
-    pass
+            orders = []
+            query_args = {
+                "KeyConditionExpression": Key("customer_id").eq(customer_id)
+            }
+
+            while True:
+                response = table.query(**query_args)
+                orders.extend(response.get("Items", []))
+
+                last_key = response.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+
+                query_args["ExclusiveStartKey"] = last_key
+
+            return {
+                "success": True,
+                "customer_id": customer_id,
+                "order_count": len(orders),
+                "orders": orders,
+            }
+
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": "Unable to retrieve customer orders.",
+                "error_type": type(exc).__name__,
+            }
 
 
 # ───────────────────────────────────────────────────────
