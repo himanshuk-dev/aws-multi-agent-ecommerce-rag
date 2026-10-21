@@ -53,6 +53,8 @@ from boto3.dynamodb.conditions import Key
 import config
 from bedrock_kb_retrieval import retrieve_from_knowledge_base, format_kb_results
 
+from datetime import date
+
 # Configure logging for debugging
 logging.basicConfig(
     level=logging.WARNING,
@@ -581,6 +583,58 @@ def build_refund_agent() -> Agent:
                 return {
                     "success": False,
                     "message": "This order is not marked as return eligible.",
+                }
+            
+            customer_table = dynamodb.Table(config.CUSTOMERS_TABLE)
+            customer_response = customer_table.get_item(
+                Key={"customer_id": customer_id},
+                ConsistentRead=True,
+            )
+
+            customer = customer_response.get("Item")
+
+            if not customer:
+                return {
+                    "success": False,
+                    "message": "Customer not found.",
+                }
+
+            tier = customer.get("tier")
+            return_windows = {
+                "Standard": 30,
+                "Premium": 60,
+            }
+
+            if tier not in return_windows:
+                return {
+                    "success": False,
+                    "message": "Customer membership tier is not recognized.",
+                }
+
+            try:
+                order_date = date.fromisoformat(order["order_date"])
+            except (KeyError, TypeError, ValueError):
+                return {
+                    "success": False,
+                    "message": "Order date is missing or invalid.",
+                }
+
+            days_since_purchase = (date.today() - order_date).days
+            return_window_days = return_windows[tier]
+
+            if days_since_purchase < 0:
+                return {
+                    "success": False,
+                    "message": "Order date cannot be in the future.",
+                }
+
+            if days_since_purchase > return_window_days:
+                return {
+                    "success": False,
+                    "message": (
+                        f"Return window expired. {tier} customers have "
+                        f"{return_window_days} days to request a return."
+                    ),
                 }
 
             return {
