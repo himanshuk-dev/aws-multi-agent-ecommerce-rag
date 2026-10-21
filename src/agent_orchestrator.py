@@ -905,10 +905,13 @@ def build_policy_agent() -> Agent:
     You must not impersonate either agent or claim to have performed
     their responsibilities.
     """
+    policy_agent = Agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=[search_all_policies],
+    )
 
-    # TODO: Instantiate and return the PolicyAgent coordinator
-    pass
-
+    return policy_agent
 
 # ───────────────────────────────────────────────────────
 #  2.D - COMMUNICATION AGENT
