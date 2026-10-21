@@ -1223,7 +1223,54 @@ def build_orchestrator_agent(
         Returns:
             Refund decision from the RefundAgent
         """
-        pass
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (session_id, customer_id, request)
+        ):
+            return "Error: Session ID, customer ID, and request are required."
+
+        session_id = session_id.strip()
+        customer_id = customer_id.strip()
+        request = request.strip()
+
+        try:
+            state = _read_workflow_state(session_id)
+
+            if state is None:
+                return "Error: Initialize the workflow session first."
+
+            if state.get("customer_id") != customer_id:
+                return "Error: Customer ID does not match the workflow session."
+
+            if not state.get("inventory_agent"):
+                return (
+                    "Error: Inventory findings are required before "
+                    "routing to the Refund Agent."
+                )
+
+            response = refund_agent(
+                f"Session ID: {session_id}\n"
+                f"Customer ID: {customer_id}\n"
+                f"Customer request: {request}\n"
+                "First retrieve the inventory context using your tool. "
+                "Evaluate the request using available verified information. "
+                "Do not claim that a refund was processed unless an "
+                "authorized transaction was actually completed."
+            )
+
+            findings = str(response)
+
+            _update_workflow_state(
+                session_id,
+                {"refund_agent": findings},
+                expected_version=int(state["version"]),
+            )
+
+            return findings
+
+        except Exception:
+            logger.exception("Refund Agent routing failed")
+            return "Error: Unable to evaluate or save refund findings."
 
     # TODO: Implement route_to_communication_agent
     @tool
