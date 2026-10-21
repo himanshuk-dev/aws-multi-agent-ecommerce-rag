@@ -485,7 +485,6 @@ def build_refund_agent() -> Agent:
     - Return a concise, structured decision to the Orchestrator Agent.
     """
 
-    # TODO: Implement get_inventory_context
     @tool
     def get_inventory_context(session_id: str) -> dict:
         """
@@ -497,7 +496,36 @@ def build_refund_agent() -> Agent:
         Returns:
             The inventory_agent field from WorkflowState, or empty dict if not yet set
         """
-        pass
+        try:
+            state = _read_workflow_state(session_id)
+
+            if not state:
+                return {
+                    "success": False,
+                    "message": "Workflow session not found.",
+                }
+
+            inventory_context = state.get("inventory_agent")
+
+            if not inventory_context:
+                return {
+                    "success": False,
+                    "message": "Inventory context is not available for this session.",
+                }
+
+            return {
+                "success": True,
+                "session_id": session_id,
+                "customer_id": state.get("customer_id"),
+                "inventory_context": inventory_context,
+            }
+
+        except Exception:
+            logger.exception("Failed to retrieve inventory context")
+            return {
+                "success": False,
+                "message": "Unable to retrieve inventory context at this time.",
+            }
 
     # TODO: Implement initiate_refund
     @tool
