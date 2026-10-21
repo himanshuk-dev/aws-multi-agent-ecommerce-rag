@@ -701,7 +701,7 @@ def build_policy_agent() -> Agent:
         model=BedrockModel(
             model_id=config.WORKER_MODEL_ID,
             region_name=config.AWS_REGION,
-            temperature=0.1,
+            temperature=0.0,
         ),
         system_prompt=(
             "You are the Returns Policy Retriever Agent for NovaMart. "
@@ -740,7 +740,7 @@ def build_policy_agent() -> Agent:
         model=BedrockModel(
             model_id=config.WORKER_MODEL_ID,
             region_name=config.AWS_REGION,
-            temperature=0.1,
+            temperature=0.0,
         ),
         system_prompt=(
             "You are the Shipping Policy Retriever Agent for NovaMart. "
@@ -778,7 +778,7 @@ def build_policy_agent() -> Agent:
         model=BedrockModel(
             model_id=config.WORKER_MODEL_ID,
             region_name=config.AWS_REGION,
-            temperature=0.1,
+            temperature=0.0,
         ),
         system_prompt=(
             "You are the Warranty Policy Retriever Agent for NovaMart. "
@@ -870,7 +870,7 @@ def build_policy_agent() -> Agent:
     model = BedrockModel(
         model_id=config.WORKER_MODEL_ID,
         region_name=config.AWS_REGION,
-        temperature=0.1,
+        temperature=0.2,
     )
 
     system_prompt = """
