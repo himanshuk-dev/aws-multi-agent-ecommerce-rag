@@ -651,9 +651,17 @@ def build_refund_agent() -> Agent:
                 "success": False,
                 "message": "Unable to validate the return request at this time.",
             }
+        
+    refund_agent = Agent(
+        model=model,
+        system_prompt=system_prompt,
+        tools=[
+            get_inventory_context,
+            initiate_refund,
+        ],
+    )
 
-    # TODO: Instantiate and return the Agent
-    pass
+    return refund_agent
 
 
 # ───────────────────────────────────────────────────────
