@@ -1188,7 +1188,31 @@ def build_orchestrator_agent(
         Returns:
             Confirmation that the session was initialized
         """
-        pass
+        if not session_id or not session_id.strip():
+            return "Error: A valid session ID is required."
+
+        if not customer_id or not customer_id.strip():
+            return "Error: A valid customer ID is required."
+
+        session_id = session_id.strip()
+        customer_id = customer_id.strip()
+
+        try:
+            _create_workflow_state(session_id, customer_id)
+
+            return (
+                f"Workflow session {session_id} initialized successfully."
+            )
+
+        except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+            return (
+                "Error: This workflow session already exists. "
+                "Use a new session ID."
+            )
+
+        except Exception:
+            logger.exception("Failed to initialize workflow session")
+            return "Error: Unable to initialize workflow session."
 
     # TODO: Instantiate and return the OrchestratorAgent
     pass
