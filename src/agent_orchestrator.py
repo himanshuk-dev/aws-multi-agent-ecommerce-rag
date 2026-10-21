@@ -677,6 +677,7 @@ def build_policy_agent() -> Agent:
     the combined results into a complete, grounded policy answer.
     """
 
+    # Return Policy retrieval tool
     @tool
     def retrieve_returns_policy(query: str) -> str:
         """Retrieve relevant passages from the Returns Policy knowledge base."""
@@ -735,8 +736,23 @@ def build_policy_agent() -> Agent:
             return "Unable to retrieve the shipping policy at this time."
     
 
-    # Create the ShippingPolicyRetrieverAgent with the tool above
-    pass
+    shipping_retriever = Agent(
+        model=BedrockModel(
+            model_id=config.WORKER_MODEL_ID,
+            region_name=config.AWS_REGION,
+            temperature=0.1,
+        ),
+        system_prompt=(
+            "You are the Shipping Policy Retriever Agent for NovaMart. "
+            "Use retrieve_shipping_policy to retrieve information from the "
+            "Shipping Policy Knowledge Base. "
+            "Answer questions only using retrieved policy passages. "
+            "Preserve relevant source references. "
+            "Do not invent shipping timelines, costs, exceptions, or guarantees. "
+            "If retrieval fails or no relevant policy is found, clearly say so."
+        ),
+        tools=[retrieve_shipping_policy],
+    )
 
     # TODO: Build WarrantyPolicyRetrieverAgent
     @tool
