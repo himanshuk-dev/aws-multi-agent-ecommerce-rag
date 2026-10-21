@@ -714,11 +714,26 @@ def build_policy_agent() -> Agent:
         tools=[retrieve_returns_policy],
     )
 
-    # TODO: Build ShippingPolicyRetrieverAgent
+    # Shipping Policy retrieval tool
     @tool
     def retrieve_shipping_policy(query: str) -> str:
         """Retrieve relevant passages from the Shipping Policy knowledge base."""
-        pass
+        if not query.strip():
+            return "A policy question is required."
+
+        try:
+            results = retrieve_from_knowledge_base(
+                kb_id=config.SHIPPING_KB_ID,
+                query=query,
+                top_k=3,
+            )
+
+            return format_kb_results(results)
+
+        except Exception:
+            logger.exception("Shipping policy retrieval failed")
+            return "Unable to retrieve the shipping policy at this time."
+    
 
     # Create the ShippingPolicyRetrieverAgent with the tool above
     pass
