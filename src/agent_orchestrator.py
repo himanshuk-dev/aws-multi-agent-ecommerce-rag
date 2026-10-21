@@ -754,11 +754,25 @@ def build_policy_agent() -> Agent:
         tools=[retrieve_shipping_policy],
     )
 
-    # TODO: Build WarrantyPolicyRetrieverAgent
+    # Warranty Policy retrieval tool
     @tool
     def retrieve_warranty_policy(query: str) -> str:
         """Retrieve relevant passages from the Warranty Policy knowledge base."""
-        pass
+        if not query.strip():
+            return "A policy question is required."
+
+        try:
+            results = retrieve_from_knowledge_base(
+                kb_id=config.WARRANTY_KB_ID,
+                query=query,
+                top_k=3,
+            )
+
+            return format_kb_results(results)
+
+        except Exception:
+            logger.exception("Warranty policy retrieval failed")
+            return "Unable to retrieve the warranty policy at this time."
 
     # Create the WarrantyPolicyRetrieverAgent with the tool above
     pass
