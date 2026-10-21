@@ -302,8 +302,50 @@ def build_inventory_agent() -> Agent:
     - Provide concise, structured results for the orchestrator.
     """
 
-    # TODO: Implement check_order_status tool
-    pass
+    # check_order_status tool
+    
+    @tool
+    def check_order_status(customer_id: str, order_id: str) -> dict:
+        """
+        Retrieve an order belonging to a specific customer.
+
+        Args:
+            customer_id: Customer's unique identifier.
+            order_id: Order's unique identifier.
+
+        Returns:
+            Order details or an error message if not found.
+        """
+        try:
+            table = dynamodb.Table(config.ORDERS_TABLE)
+
+            response = table.get_item(
+                Key={
+                    "customer_id": customer_id,
+                    "order_id": order_id,
+                }
+            )
+
+            order = response.get("Item")
+
+            if not order:
+                return {
+                    "success": False,
+                    "message": "Order not found for this customer.",
+                }
+
+            return {
+                "success": True,
+                "order": order,
+            }
+
+        except Exception:
+            logger.exception("Failed to retrieve order")
+            return {
+                "success": False,
+                "message": "Unable to retrieve order details at this time.",
+            }
+
 
     # TODO: Implement get_customer_tier
     @tool
