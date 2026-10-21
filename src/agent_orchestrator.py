@@ -275,14 +275,13 @@ def build_inventory_agent() -> Agent:
     Gathers order and customer facts from DynamoDB. Does NOT make decisions -
     only retrieves data for the OrchestratorAgent to share with downstream agents.
     """
-    # Create a BedrockModel using the WORKER model
+
     model = BedrockModel(
         model_id=config.WORKER_MODEL_ID,
         region_name=config.AWS_REGION,
         temperature=0.1,
     )
 
-    # System prompt for the Inventory Agent
     system_prompt = """
     You are the Inventory Agent for NovaMart customer support.
 
@@ -302,8 +301,6 @@ def build_inventory_agent() -> Agent:
     - Provide concise, structured results for the orchestrator.
     """
 
-    # check_order_status tool
-    
     @tool
     def check_order_status(customer_id: str, order_id: str) -> dict:
         """
@@ -346,8 +343,6 @@ def build_inventory_agent() -> Agent:
                 "message": "Unable to retrieve order details at this time.",
             }
 
-
-    # TODO: Implement get_customer_tier
     @tool
     def get_customer_tier(customer_id: str) -> dict:
         """
@@ -360,7 +355,35 @@ def build_inventory_agent() -> Agent:
         Returns:
             Customer profile including tier and account details
         """
-        pass
+        
+        try:
+            table = dynamodb.Table(config.CUSTOMERS_TABLE)
+
+            response = table.get_item(
+                Key={"customer_id": customer_id}
+            )
+
+            customer = response.get("Item")
+
+            if not customer:
+                return {
+                    "success": False,
+                    "message": "Customer not found.",
+                }
+
+            return {
+                "success": True,
+                "customer_id": customer_id,
+                "tier": customer.get("tier", "Unknown"),
+            }
+
+        except Exception as exc:
+            return {
+                "success": False,
+                "message": "Unable to retrieve customer tier.",
+                "error_type": type(exc).__name__,
+            }
+
 
     # TODO: Implement list_customer_orders
     @tool
