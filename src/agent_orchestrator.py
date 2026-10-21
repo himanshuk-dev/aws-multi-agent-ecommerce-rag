@@ -793,7 +793,6 @@ def build_policy_agent() -> Agent:
         tools=[retrieve_warranty_policy],
     )
 
-    # TODO: Implement search_all_policies - parallel RAG retrieval tool
     @tool
     def search_all_policies(query: str) -> str:
         """
@@ -809,7 +808,11 @@ def build_policy_agent() -> Agent:
             Combined policy passages from all three knowledge bases
         """
         # Build a dict mapping domain names to their retriever agents
-        # e.g. {'Returns': returns_retriever, 'Shipping': shipping_retriever, ...}
+        retrievers = {
+            "Returns": returns_retriever,
+            "Shipping": shipping_retriever,
+            "Warranty": warranty_retriever,
+        }
 
         # ── Trace: show parallel KB dispatch to learners ──────────────────
         trace.kb_start({
