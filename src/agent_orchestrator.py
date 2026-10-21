@@ -823,19 +823,19 @@ def build_policy_agent() -> Agent:
 
         # Define a helper to run one retriever sub-agent
         def _run_retriever(domain: str, agent, query: str) -> tuple:
-            """
-            Run one retriever sub-agent and return (domain, result_text).
+            """Run one retriever agent and return its domain and response."""
+            try:
+                result = agent(query)
+                result_text = str(result).strip()
 
-            stdout is suppressed globally for all threads by the
-            _TraceWriter._suppress_parallel flag set in kb_start().
-            This covers both the direct worker thread and any internal
-            streaming child threads that Strands SDK spawns internally -
-            which do NOT inherit thread-local variables and therefore cannot
-            be suppressed with a thread-local capture approach.
-            Results are returned as values and printed cleanly and
-            sequentially by trace.kb_result() after all futures join.
-            """
-            pass
+                if not result_text:
+                    result_text = "No policy information returned."
+
+                return domain, result_text
+
+            except Exception:
+                logger.exception("Policy retrieval failed for %s", domain)
+                return domain, "Policy retrieval failed."
 
         # Use ThreadPoolExecutor to run all three retrievers in parallel
         # Collect results into a dict: {'Returns': '...', 'Shipping': '...', ...}
