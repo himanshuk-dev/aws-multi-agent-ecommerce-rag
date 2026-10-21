@@ -1288,7 +1288,57 @@ def build_orchestrator_agent(
         Returns:
             Final customer-facing response drafted by CommunicationAgent
         """
-        pass
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (session_id, customer_id, original_request)
+        ):
+            return (
+                "Error: Session ID, customer ID, and "
+                "original request are required."
+            )
+
+        session_id = session_id.strip()
+        customer_id = customer_id.strip()
+        original_request = original_request.strip()
+
+        try:
+            state = _read_workflow_state(session_id)
+
+            if state is None:
+                return "Error: Initialize the workflow session first."
+
+            if state.get("customer_id") != customer_id:
+                return "Error: Customer ID does not match the workflow session."
+
+            if not any(
+                state.get(agent_name)
+                for agent_name in (
+                    "inventory_agent",
+                    "policy_agent",
+                    "refund_agent",
+                )
+            ):
+                return (
+                    "Error: No specialist agent findings are available. "
+                    "Route the request to the appropriate agent first."
+                )
+
+            response = communication_agent(
+                f"Session ID: {session_id}\n"
+                f"Customer ID: {customer_id}\n"
+                f"Original customer request: {original_request}\n"
+                "Retrieve the full workflow context using your tool. "
+                "Compose the final customer-facing response using "
+                "only available findings. "
+                "Clearly identify missing or unverified information. "
+                "Do not invent policy details or completed actions."
+            )
+
+            return str(response)
+
+        except Exception:
+            logger.exception("Communication Agent routing failed")
+            return "Error: Unable to generate the customer response."
 
     @tool
     def initialize_session(session_id: str, customer_id: str) -> str:
