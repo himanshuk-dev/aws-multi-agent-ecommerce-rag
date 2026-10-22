@@ -1431,7 +1431,156 @@ def create_guardrail() -> tuple[str, str]:
 
     # Promote from DRAFT to a versioned guardrail using create_guardrail_version()
 
-    pass
+    content_policy = {
+        "filtersConfig": [
+            {
+                "type": category,
+                "inputStrength": "HIGH",
+                "outputStrength": "NONE" if category == "PROMPT_ATTACK" else "HIGH",
+            }
+            for category in (
+                "SEXUAL",
+                "VIOLENCE",
+                "HATE",
+                "INSULTS",
+                "MISCONDUCT",
+                "PROMPT_ATTACK",
+            )
+        ]
+    }
+
+    sensitive_information_policy = {
+        "piiEntitiesConfig": [
+            {
+                "type": "CREDIT_DEBIT_CARD_NUMBER",
+                "action": "BLOCK",
+            },
+            {
+                "type": "US_SOCIAL_SECURITY_NUMBER",
+                "action": "BLOCK",
+            },
+            {
+                "type": "EMAIL",
+                "action": "ANONYMIZE",
+            },
+            {
+                "type": "PHONE",
+                "action": "ANONYMIZE",
+            },
+        ]
+    }
+
+    topic_policy = {
+        "topicsConfig": [
+            {
+                "name": "competitor_products",
+                "definition": (
+                    "Requests to recommend, compare, or promote products "
+                    "sold by competing retailers instead of providing "
+                    "NovaMart customer support."
+                ),
+                "examples": [
+                    "Which competing retailer has better products?",
+                    "Recommend a competitor instead of NovaMart.",
+                ],
+                "type": "DENY",
+            },
+            {
+                "name": "legal_threats",
+                "definition": (
+                    "Requests for legal advice, legal strategy, or "
+                    "substantive responses to threatened legal action "
+                    "against NovaMart."
+                ),
+                "examples": [
+                    "Give me legal advice for suing NovaMart.",
+                    "How should I prepare a lawsuit against NovaMart?",
+                ],
+                "type": "DENY",
+            },
+            {
+                "name": "pricing_negotiations",
+                "definition": (
+                    "Requests to negotiate custom prices, authorize "
+                    "unpublished discounts, or make binding price "
+                    "commitments on behalf of NovaMart."
+                ),
+                "examples": [
+                    "Negotiate a lower price for this order.",
+                    "Promise me a special discount that is not advertised.",
+                ],
+                "type": "DENY",
+            },
+        ]
+    }
+
+    word_policy = {
+        "managedWordListsConfig": [
+            {
+                "type": "PROFANITY",
+            }
+        ]
+    }
+
+    guardrail_request = {
+        "name": config.GUARDRAIL_NAME,
+        "description": (
+            "NovaMart customer support guardrail for content safety, "
+            "PII protection, restricted topics, and profanity."
+        ),
+        "contentPolicyConfig": content_policy,
+        "sensitiveInformationPolicyConfig": sensitive_information_policy,
+        "topicPolicyConfig": topic_policy,
+        "wordPolicyConfig": word_policy,
+        "blockedInputMessaging": (
+            "I cannot assist with that request. "
+            "Please contact customer support if you need further help."
+        ),
+        "blockedOutputsMessaging": (
+            "I cannot provide that response. "
+            "Please rephrase your question or contact customer support."
+        ),
+    }
+
+    operation_model = bedrock_client.meta.service_model.operation_model(
+        "CreateGuardrail"
+    )
+
+    bedrock_client.meta.events  # Client initialized successfully
+
+    from botocore.validate import ParamValidator
+
+    validator = ParamValidator()
+    validation = validator.validate(
+        guardrail_request,
+        operation_model.input_shape,
+    )
+
+    if validation.has_errors():
+        raise ValueError(validation.generate_report())
+
+    print("Guardrail request passed local SDK validation.")
+
+    response = bedrock_client.create_guardrail(**guardrail_request)
+
+    guardrail_id = response["guardrailId"]
+
+    print(f"Bedrock Guardrail created: {guardrail_id} (DRAFT)")
+
+    version_response = bedrock_client.create_guardrail_version(
+        guardrailIdentifier=guardrail_id,
+        description="Initial NovaMart customer support guardrail version",
+    )
+
+    guardrail_version = version_response["version"]
+
+    print(
+        f"Bedrock Guardrail published: "
+        f"{guardrail_id} (version {guardrail_version})"
+    )
+
+    return guardrail_id, guardrail_version
+
 
 
 def deploy_to_agentcore_runtime(
