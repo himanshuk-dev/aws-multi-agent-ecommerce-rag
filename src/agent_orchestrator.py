@@ -1408,29 +1408,6 @@ def create_guardrail() -> tuple[str, str]:
     """
     bedrock_client = boto3.client('bedrock', region_name=config.AWS_REGION)
 
-    # Check if guardrail already exists to avoid duplicates
-    existing = bedrock_client.list_guardrails()
-    for g in existing.get('guardrails', []):
-        if g['name'] == config.GUARDRAIL_NAME:
-            guardrail_id = g['id']
-            versions = bedrock_client.list_guardrails(guardrailIdentifier=guardrail_id)
-            guardrail_version = 'DRAFT'
-            for v in versions.get('guardrails', []):
-                if v.get('version', 'DRAFT') != 'DRAFT':
-                    guardrail_version = v['version']
-            print(f"Guardrail already exists: {guardrail_id} (version: {guardrail_version})")
-            return guardrail_id, guardrail_version
-
-    # TODO: Create the guardrail
-    # Use bedrock_client.create_guardrail() with:
-    #   - Content policy - block harmful categories at HIGH strength
-    #   - PII policy - block credit cards + SSNs; anonymize emails + phone numbers
-    #   - Topic policy - deny off-topic subjects (competitor_products, legal_threats, pricing_negotiations)
-    #   - Word policy - profanity filter
-    #   - blockedInputMessaging and blockedOutputsMessaging
-
-    # Promote from DRAFT to a versioned guardrail using create_guardrail_version()
-
     content_policy = {
         "filtersConfig": [
             {
@@ -1555,6 +1532,20 @@ def create_guardrail() -> tuple[str, str]:
         ),
     }
 
+    # Find an existing guardrail so its configuration can be updated.
+    existing_guardrail_id = None
+
+    paginator = bedrock_client.get_paginator("list_guardrails")
+
+    for page in paginator.paginate():
+        for guardrail in page.get("guardrails", []):
+            if guardrail["name"] == config.GUARDRAIL_NAME:
+                existing_guardrail_id = guardrail["id"]
+                break
+
+        if existing_guardrail_id:
+            break
+
     operation_model = bedrock_client.meta.service_model.operation_model(
         "CreateGuardrail"
     )
@@ -1574,15 +1565,31 @@ def create_guardrail() -> tuple[str, str]:
 
     print("Guardrail request passed local SDK validation.")
 
-    response = bedrock_client.create_guardrail(**guardrail_request)
+    if existing_guardrail_id:
+        # Update the existing guardrail's DRAFT configuration.
+        guardrail_id = existing_guardrail_id
 
-    guardrail_id = response["guardrailId"]
+        update_request = {
+            **guardrail_request,
+            "guardrailIdentifier": guardrail_id,
+        }
 
-    print(f"Bedrock Guardrail created: {guardrail_id} (DRAFT)")
+        bedrock_client.update_guardrail(**update_request)
 
+        print(f"Bedrock Guardrail updated: {guardrail_id} (DRAFT)")
+
+    else:
+        # Create the guardrail only when one does not already exist.
+        response = bedrock_client.create_guardrail(**guardrail_request)
+
+        guardrail_id = response["guardrailId"]
+
+        print(f"Bedrock Guardrail created: {guardrail_id} (DRAFT)")
+
+    # Publish the current DRAFT as a numbered version.
     version_response = bedrock_client.create_guardrail_version(
         guardrailIdentifier=guardrail_id,
-        description="Initial NovaMart customer support guardrail version",
+        description="NovaMart customer support guardrail aligned with project requirements",
     )
 
     guardrail_version = version_response["version"]
@@ -1593,8 +1600,6 @@ def create_guardrail() -> tuple[str, str]:
     )
 
     return guardrail_id, guardrail_version
-
-
 
 def deploy_to_agentcore_runtime(
     orchestrator_agent: Agent,
