@@ -1435,17 +1435,22 @@ def create_guardrail() -> tuple[str, str]:
         "filtersConfig": [
             {
                 "type": category,
-                "inputStrength": "HIGH",
-                "outputStrength": "NONE" if category == "PROMPT_ATTACK" else "HIGH",
+                "inputStrength": strength,
+                "outputStrength": strength,
             }
-            for category in (
-                "SEXUAL",
-                "VIOLENCE",
-                "HATE",
-                "INSULTS",
-                "MISCONDUCT",
-                "PROMPT_ATTACK",
+            for category, strength in (
+                ("SEXUAL", "HIGH"),
+                ("VIOLENCE", "HIGH"),
+                ("HATE", "HIGH"),
+                ("INSULTS", "MEDIUM"),
+                ("MISCONDUCT", "MEDIUM"),
             )
+        ] + [
+            {
+                "type": "PROMPT_ATTACK",
+                "inputStrength": "HIGH",
+                "outputStrength": "NONE",
+            }
         ]
     }
 
@@ -1471,6 +1476,9 @@ def create_guardrail() -> tuple[str, str]:
     }
 
     topic_policy = {
+        "tierConfig": {
+            "tierName": "STANDARD",
+        },
         "topicsConfig": [
             {
                 "name": "competitor_products",
@@ -1501,13 +1509,15 @@ def create_guardrail() -> tuple[str, str]:
             {
                 "name": "pricing_negotiations",
                 "definition": (
-                    "Requests to negotiate custom prices, authorize "
-                    "unpublished discounts, or make binding price "
-                    "commitments on behalf of NovaMart."
+                    "Requests to haggle, negotiate, or change an advertised "
+                    "product price, or obtain a special unadvertised discount. "
+                    "Do not deny requests to calculate totals, percentages, "
+                    "taxes, or discounts using a specified price and discount."
                 ),
                 "examples": [
-                    "Negotiate a lower price for this order.",
-                    "Promise me a special discount that is not advertised.",
+                    "Can you lower the advertised price for me?",
+                    "Give me a special discount that is not advertised.",
+                    "I want to negotiate a better price for this product.",
                 ],
                 "type": "DENY",
             },
@@ -1531,6 +1541,9 @@ def create_guardrail() -> tuple[str, str]:
         "contentPolicyConfig": content_policy,
         "sensitiveInformationPolicyConfig": sensitive_information_policy,
         "topicPolicyConfig": topic_policy,
+        "crossRegionConfig": {
+            "guardrailProfileIdentifier": "us.guardrail.v1:0",
+        },
         "wordPolicyConfig": word_policy,
         "blockedInputMessaging": (
             "I cannot assist with that request. "
