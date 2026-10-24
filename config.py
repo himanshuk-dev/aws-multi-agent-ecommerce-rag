@@ -24,6 +24,12 @@ load_dotenv()
 # ─────────────────────────────────────────────
 AWS_REGION   = os.environ.get('AWS_REGION', 'us-east-1')
 PROJECT_NAME = os.environ.get('PROJECT_NAME', 'udacity-agentcore')
+# Names used by the restored AgentCore CLI project and deployed-state lookup.
+AGENTCORE_PROJECT_NAME = os.environ.get('AGENTCORE_PROJECT_NAME', 'udacity')
+AGENTCORE_AGENT_NAME = os.environ.get('AGENTCORE_AGENT_NAME', 'agentcore_runtime')
+AGENTCORE_RUNTIME_NAME = os.environ.get(
+    'AGENTCORE_RUNTIME_NAME', f'{AGENTCORE_PROJECT_NAME}_{AGENTCORE_AGENT_NAME}'
+)
 ACCOUNT_ID   = boto3.client('sts', region_name=AWS_REGION).get_caller_identity()['Account']
 
 # ─────────────────────────────────────────────

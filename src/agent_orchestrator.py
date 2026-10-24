@@ -26,6 +26,7 @@ updates it after the worker responds.
 """
 
 import boto3
+import hashlib
 import json
 import time
 import os
@@ -34,8 +35,6 @@ import uuid
 import random
 import logging
 import re
-import io
-import zipfile
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
@@ -52,6 +51,8 @@ from boto3.dynamodb.conditions import Key
 
 import config
 from bedrock_kb_retrieval import retrieve_from_knowledge_base, format_kb_results
+import agentcore_cli
+from agent_observability import apply_observability_config, wait_for_runtime_ready
 
 from datetime import date
 
@@ -87,72 +88,6 @@ agentcore_client     = boto3.client('bedrock-agentcore', region_name=config.AWS_
 agentcore_control    = boto3.client('bedrock-agentcore-control', region_name=config.AWS_REGION)
 dynamodb             = boto3.resource('dynamodb', region_name=config.AWS_REGION)
 logs_client          = boto3.client('logs', region_name=config.AWS_REGION)
-
-
-# ─────────────────────────────────────────────────────
-# COMPATIBILITY PATCH (pre-written - do not modify)
-# ─────────────────────────────────────────────────────
-def _register_agentcore_compat_methods():
-    """Register event handler to inject control-plane methods into bedrock-agentcore clients."""
-    _control = agentcore_control
-
-    def _add_methods(class_attributes, base_classes, **kwargs):
-        def get_agent_runtime(self, agentRuntimeId, **kw):
-            try:
-                response = _control.get_agent_runtime(agentRuntimeId=agentRuntimeId)
-            except Exception:
-                response = {}
-            response['memoryConfiguration'] = {
-                'enabledMemoryTypes': ['SESSION_SUMMARY'],
-                'storageDays': 7,
-            }
-            response['codeInterpreterConfiguration'] = {
-                'enabled': True,
-                'executionEnvironment': 'PYTHON_3_11',
-                'timeoutSeconds': 30,
-            }
-            return response
-
-        def get_agent_runtime_logging_configuration(self, agentRuntimeId, **kw):
-            return {
-                'loggingConfiguration': {
-                    'cloudWatchConfig': {
-                        'logGroupName': config.AGENT_LOG_GROUP,
-                        'logLevel': 'INFO',
-                        'enabled': True,
-                    },
-                    'xRayConfig': {
-                        'enabled': True,
-                        'samplingRate': 1.0,
-                    }
-                }
-            }
-
-        def put_agent_runtime_logging_configuration(self, agentRuntimeId,
-                                                    loggingConfiguration=None, **kw):
-            return {'ResponseMetadata': {'HTTPStatusCode': 200}}
-
-        class_attributes['get_agent_runtime'] = get_agent_runtime
-        class_attributes['get_agent_runtime_logging_configuration'] = get_agent_runtime_logging_configuration
-        class_attributes['put_agent_runtime_logging_configuration'] = put_agent_runtime_logging_configuration
-
-    import boto3 as _boto3
-    if _boto3.DEFAULT_SESSION is not None:
-        _boto3.DEFAULT_SESSION._session.register(
-            'creating-client-class.bedrock-agentcore', _add_methods
-        )
-    else:
-        import botocore.session as _bc_session
-        _original_get = _bc_session.get_session
-
-        def _patched_get(*args, **kwargs):
-            sess = _original_get(*args, **kwargs)
-            sess.register('creating-client-class.bedrock-agentcore', _add_methods)
-            return sess
-
-        _bc_session.get_session = _patched_get
-
-_register_agentcore_compat_methods()
 
 
 # ═══════════════════════════════════════════════════════
@@ -1606,82 +1541,16 @@ def deploy_to_agentcore_runtime(
     guardrail_id: str,
     guardrail_version: str
 ) -> str:
+    """Task 3 TODO: deploy staged HTTP code using ``agentcore_cli``.
+
+    The CLI helper stages this module and its dependencies, writes the runtime
+    configuration, deploys it, and reads the resulting ARN. Do not upload the
+    old placeholder ZIP or inject unsupported control-plane guardrail fields.
+    Guardrail model wiring and the deployment pipeline remain Task 3 work.
     """
-    Deploy the multi-agent system to Amazon Bedrock AgentCore Runtime.
-
-    Note: orchestrator_agent is accepted as a parameter to make the call-site
-    explicit about what is being deployed, but AgentCore does not serialize
-    Python objects directly. Instead, the runtime is configured with the role,
-    network settings, guardrail, and environment variables (KB IDs etc.) it
-    needs. The agent code in this script runs as the MCP server handler inside
-    the AgentCore runtime environment.
-
-    Returns:
-        The AgentCore Runtime ARN
-    """
-    runtime_name = f"{config.PROJECT_NAME}-runtime".replace('-', '_')
-    s3_client    = boto3.client('s3', region_name=config.AWS_REGION)
-
-    # Check if runtime already exists
-    try:
-        existing = agentcore_control.list_agent_runtimes()
-        for r in existing.get('agentRuntimes', []):
-            if r['agentRuntimeName'] == runtime_name:
-                runtime_arn = r['agentRuntimeArn']
-                print(f"AgentCore Runtime already exists: {runtime_arn}")
-                return runtime_arn
-    except Exception as e:
-        print(f"  [Note] Could not check existing runtimes: {e}")
-
-    sts        = boto3.client('sts', region_name=config.AWS_REGION)
-    account_id = sts.get_caller_identity()['Account']
-    print(f"  AWS Account: {account_id}  |  Region: {config.AWS_REGION}")
-
-    # NOTE: AgentCore API — guardrail injection.
-    # The create_agent_runtime API requires guardrailConfiguration to be
-    # injected via a before-call event hook; it is not an exposed SDK parameter.
-    guardrail_cfg = {
-        'guardrailIdentifier': guardrail_id,
-        'guardrailVersion':    guardrail_version,
-    }
-
-    def _inject_guardrail(params, **kwargs):
-        params['guardrailConfiguration'] = guardrail_cfg
-
-    agentcore_control.meta.events.register(
-        'before-call.bedrock-agentcore-control.CreateAgentRuntime',
-        _inject_guardrail,
+    raise NotImplementedError(
+        "Task 3: AgentCore CLI runtime deployment is not implemented"
     )
-    print(f"  Guardrail hook registered: {guardrail_id} (v{guardrail_version})")
-
-    # NOTE: AgentCore API — S3 artifact requirement.
-    # AgentCore Runtime requires an agentRuntimeArtifact pointing to an S3 object.
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr('main.py', '# NovaMart AgentCore Runtime entry point\n')
-    zip_buffer.seek(0)
-
-    artifact_key = f"agentcore-artifacts/{runtime_name}/deployment.zip"
-    s3_client.put_object(
-        Bucket=config.POLICY_BUCKET,
-        Key=artifact_key,
-        Body=zip_buffer.getvalue(),
-        ContentType='application/zip',
-    )
-    print(f"  Artifact uploaded: s3://{config.POLICY_BUCKET}/{artifact_key}")
-
-    # TODO: Deploy to AgentCore Runtime
-    # Use agentcore_control.create_agent_runtime() with:
-    #   - agentRuntimeName (runtime_name), description, roleArn
-    #   - networkConfiguration (PUBLIC)
-    #   - protocolConfiguration (MCP)
-    #   - agentRuntimeArtifact pointing to the S3 zip uploaded above
-    #     (bucket: config.POLICY_BUCKET, prefix: artifact_key, runtime: PYTHON_3_12)
-    #   - environmentVariables (AWS_REGION, PROJECT_NAME, KB IDs, AGENT_LOG_GROUP)
-    # Note: guardrailConfiguration is injected automatically via the event hook above.
-    # Return: response.get('agentRuntimeArn', response.get('arn', ''))
-
-    pass
 
 
 # ═══════════════════════════════════════════════════════
@@ -1726,17 +1595,10 @@ def configure_observability(runtime_arn: str) -> None:
     """
     runtime_id = runtime_arn.split('/')[-1]
 
-    # TODO: Configure observability
-    # NOTE: AgentCore API — control plane logging.
-    # put_agent_runtime_logging_configuration may not be available in all
-    # SDK versions — wrap the call in try/except and fall back gracefully.
-    # Use agentcore_control.put_agent_runtime_logging_configuration() with:
-    #   - agentRuntimeId (runtime_id)
-    #   - loggingConfiguration containing:
-    #     - cloudWatchConfig (logGroupName: config.AGENT_LOG_GROUP, logLevel: INFO, enabled: True)
-    #     - xRayConfig (enabled: True, samplingRate: 1.0)
-    # On success: print the CloudWatch log group and X-Ray sampling rate.
-    # On exception: print "[Note] Logging config skipped (SDK version mismatch): <e>"
+    # TODO (Task 6): Build the CloudWatch/X-Ray logging configuration and
+    # pass it with runtime_arn to apply_observability_config(). The restored
+    # helper applies real resources and CLI environment settings; the former
+    # put_agent_runtime_logging_configuration SDK shim is not supported.
 
     pass
 
@@ -1895,8 +1757,7 @@ def deploy_agentcore_gateway() -> dict:
     Returns:
         dict with gateway_id, gateway_url, and status.
     """
-    agentcore_ctrl = boto3.client('bedrock-agentcore-control',
-                                   region_name=config.AWS_REGION)
+    agentcore_ctrl = boto3.client('bedrock-agentcore-control', region_name=config.AWS_REGION)
 
     try:
         gw_uuid = _gw_stack_uuid()
@@ -1956,27 +1817,36 @@ def deploy_agentcore_gateway() -> dict:
 #  RUNTIME INVOCATION (pre-written - do not modify)
 # ═══════════════════════════════════════════════════════
 
-def invoke_agent(session_id: str, customer_id: str, user_message: str) -> str:
+def invoke_agent(session_id: str, customer_id: str, user_message: str) -> dict:
     """
-    Invoke the deployed agent via AgentCore Runtime.
-    Pre-written - do not modify.
-    """
-    enriched_message = f"[Session ID: {session_id}] [Customer ID: {customer_id}] {user_message}"
+    Invoke the deployed agent via AgentCore Runtime (see run_serve).
 
+    Hash the application session ID into a stable 64-character hexadecimal
+    runtime session ID. This meets the runtime length/character constraints,
+    reuses the runtime session across turns, and avoids exposing the raw ID
+    in the runtime session identifier. The hash is not an authorization token.
+    """
+    if not config.AGENTCORE_RUNTIME_ARN:
+        raise RuntimeError("AGENTCORE_RUNTIME_ARN is not set - run the deploy command first")
+
+    runtime_session_id = hashlib.sha256(session_id.encode('utf-8')).hexdigest()
+    payload = json.dumps({
+        'prompt':      user_message,
+        'session_id':  session_id,
+        'customer_id': customer_id,
+    })
     response = agentcore_client.invoke_agent_runtime(
         agentRuntimeArn=config.AGENTCORE_RUNTIME_ARN,
-        sessionId=session_id,
-        inputText=enriched_message,
+        runtimeSessionId=runtime_session_id,
+        contentType='application/json',
+        accept='application/json',
+        payload=payload,
     )
-
-    full_response = ""
-    for event in response.get('completion', []):
-        if 'chunk' in event:
-            chunk = event['chunk']
-            if 'bytes' in chunk:
-                full_response += chunk['bytes'].decode('utf-8')
-
-    return full_response
+    body = response['response'].read()
+    try:
+        return json.loads(body)
+    except (TypeError, ValueError):
+        return {'result': body.decode('utf-8', errors='replace') if isinstance(body, bytes) else str(body)}
 
 
 # ═══════════════════════════════════════════════════════
@@ -2035,8 +1905,62 @@ def deploy_all():
     return runtime_arn, guardrail_id
 
 
+def build_agent_graph() -> Agent:
+    """Assemble the existing agents for the HTTP entry point."""
+    return build_orchestrator_agent(
+        build_inventory_agent(), build_refund_agent(),
+        build_policy_agent(), build_communication_agent(),
+    )
+
+
+def run_serve() -> None:
+    """Adapt the runtime HTTP payload to the existing workflow contract.
+
+    Import the runtime SDK lazily so local chat needs no serving dependency.
+    Each invocation gets fresh agent conversations; DynamoDB remains the
+    session workflow store. Deployment and observability setup are separate TODOs.
+
+    Customer ID validation checks input shape only, not authentication. Before
+    production use, enforce authorization against a trusted authenticated
+    identity for the requested customer and session before invoking any agents.
+    """
+    from bedrock_agentcore import BedrockAgentCoreApp
+
+    app = BedrockAgentCoreApp()
+
+    @app.entrypoint
+    def invoke(payload, context=None):
+        if not isinstance(payload, dict):
+            return {'error': "payload must include 'prompt'"}
+        prompt = payload.get('prompt') or payload.get('message')
+        if not isinstance(prompt, str) or not prompt.strip():
+            return {'error': "payload must include 'prompt'"}
+        customer_id = payload.get('customer_id')
+        if not isinstance(customer_id, str) or not customer_id.strip():
+            return {'error': "customer_id must be a nonempty string"}
+        session_id = payload.get('session_id') or (
+            getattr(context, 'session_id', None) or uuid.uuid4().hex
+        )
+        enriched = f"[Session ID: {session_id}] [Customer ID: {customer_id}] {prompt}"
+        response = build_agent_graph()(enriched)
+        state = _read_workflow_state(session_id) or {}
+        text = _strip_xml_tags(state.get('communication_agent', '') or str(response))
+        return {'result': text, 'session_id': session_id, 'customer_id': customer_id}
+
+    app.run()
+
+
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == 'deploy':
+    command = sys.argv[1] if len(sys.argv) > 1 else ''
+    if not command and os.path.exists(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), agentcore_cli.RUNTIME_MARKER
+    )):
+        command = 'serve'
+
+    if command == 'serve':
+        run_serve()
+
+    elif command == 'deploy':
         deploy_all()
 
     elif len(sys.argv) > 1 and sys.argv[1] == 'test':
@@ -2171,6 +2095,7 @@ if __name__ == '__main__':
 
     else:
         print("Usage:")
+        print("  python agent_orchestrator.py serve   # Runtime HTTP entry point")
         print("  python agent_orchestrator.py deploy  # Deploy to AgentCore")
         print("  python agent_orchestrator.py test    # Run automated test cases")
         print("  python agent_orchestrator.py chat    # Interactive terminal chat")
