@@ -125,7 +125,7 @@ AGENTCORE_RUNTIME_ARN = os.environ.get('AGENTCORE_RUNTIME_ARN', '')
 
 # Task 3: Guardrail - try CloudFormation export first (full_stack.yaml), then .env
 GUARDRAIL_ID      = _exports.get(f"{PROJECT_NAME}-GuardrailId",      os.environ.get('GUARDRAIL_ID', ''))
-GUARDRAIL_VERSION = _exports.get(f"{PROJECT_NAME}-GuardrailVersion", os.environ.get('GUARDRAIL_VERSION', ''))
+GUARDRAIL_VERSION = _exports.get(f"{PROJECT_NAME}-GuardrailVersion", os.environ.get('GUARDRAIL_VERSION', 'DRAFT'))
 
 # Task 4: AgentCore Memory namespace
 MEMORY_NAMESPACE = f"{PROJECT_NAME}-memory"
