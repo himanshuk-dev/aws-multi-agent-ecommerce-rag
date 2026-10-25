@@ -1563,16 +1563,60 @@ def deploy_to_agentcore_runtime(
     guardrail_id: str,
     guardrail_version: str
 ) -> str:
-    """Task 3 TODO: deploy staged HTTP code using ``agentcore_cli``.
+    """Stage and deploy the HTTP application through the supplied AgentCore CLI.
 
-    The CLI helper stages this module and its dependencies, writes the runtime
-    configuration, deploys it, and reads the resulting ARN. Do not upload the
-    old placeholder ZIP or inject unsupported control-plane guardrail fields.
-    Guardrail model wiring and the deployment pipeline remain Task 3 work.
+    ``orchestrator_agent`` preserves the existing interface; the CLI packages
+    application source rather than serializing this in-memory agent. KB IDs
+    may be empty until Task 5. Validate required settings before any staging,
+    configuration writes, or deployment.
     """
-    raise NotImplementedError(
-        "Task 3: AgentCore CLI runtime deployment is not implemented"
+    if not isinstance(guardrail_id, str) or not guardrail_id.strip():
+        raise ValueError("GUARDRAIL_ID is required for runtime deployment")
+    if not isinstance(guardrail_version, str) or not re.fullmatch(
+        r"[1-9][0-9]*", guardrail_version
+    ):
+        raise ValueError(
+            "GUARDRAIL_VERSION must be a published positive integer; "
+            "DRAFT is not supported for runtime deployment"
+        )
+
+    required = {
+        name: getattr(config, name, '')
+        for name in ('AWS_REGION', 'PROJECT_NAME', 'AGENT_LOG_GROUP', 'AGENTCORE_ROLE_ARN')
+    }
+    missing = [
+        name for name, value in required.items()
+        if not isinstance(value, str) or not value.strip()
+    ]
+    if missing:
+        raise ValueError(
+            "Missing required runtime configuration: " + ', '.join(missing)
+        )
+
+    runtime_env = {
+        'AWS_REGION': required['AWS_REGION'],
+        'PROJECT_NAME': required['PROJECT_NAME'],
+        'RETURNS_KB_ID': config.RETURNS_KB_ID,
+        'SHIPPING_KB_ID': config.SHIPPING_KB_ID,
+        'WARRANTY_KB_ID': config.WARRANTY_KB_ID,
+        'AGENT_LOG_GROUP': required['AGENT_LOG_GROUP'],
+        'GUARDRAIL_ID': guardrail_id,
+        'GUARDRAIL_VERSION': guardrail_version,
+    }
+    agentcore_cli.stage_runtime_code()
+    agentcore_cli.configure_runtime(
+        env_vars=runtime_env,
+        network_mode="PUBLIC",
+        protocol="HTTP",
+        execution_role_arn=required['AGENTCORE_ROLE_ARN'],
     )
+    agentcore_cli.deploy()
+    runtime_arn = agentcore_cli.deployed_runtime_arn()
+    if not isinstance(runtime_arn, str) or not runtime_arn.strip():
+        raise RuntimeError(
+            "AgentCore CLI deployment completed but no runtime ARN was found"
+        )
+    return runtime_arn
 
 
 # ═══════════════════════════════════════════════════════

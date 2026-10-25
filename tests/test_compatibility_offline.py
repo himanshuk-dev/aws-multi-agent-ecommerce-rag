@@ -8,7 +8,7 @@ import sys
 import tempfile
 import types
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT), str(ROOT / 'tests')]
@@ -171,13 +171,89 @@ class CompatibilityTests(unittest.TestCase):
             ao.wait_for_runtime_ready(ctl, 'test')
         self.assertTrue(callable(ao.apply_observability_config))
 
-    def test_deployment_remains_unimplemented_without_writes(self):
-        with self.assertRaises(NotImplementedError):
-            ao.deploy_to_agentcore_runtime(None, 'guardrail', '1')
-
     def test_no_fabricated_data_plane_methods(self):
         self.assertFalse(hasattr(ao.agentcore_client, 'get_agent_runtime'))
         self.assertFalse(hasattr(ao.agentcore_client, 'put_agent_runtime_logging_configuration'))
+
+
+
+class DeploymentTests(unittest.TestCase):
+    def setUp(self):
+        self.settings = {
+            'AWS_REGION': 'us-east-1',
+            'PROJECT_NAME': 'offline-project',
+            'RETURNS_KB_ID': 'returns-kb',
+            'SHIPPING_KB_ID': 'shipping-kb',
+            'WARRANTY_KB_ID': 'warranty-kb',
+            'AGENT_LOG_GROUP': '/offline/agent',
+            'AGENTCORE_ROLE_ARN': 'arn:aws:iam::123456789012:role/offline',
+        }
+        settings_patch = patch.multiple(config, **self.settings)
+        settings_patch.start()
+        self.addCleanup(settings_patch.stop)
+        cli_patch = patch.object(ao, 'agentcore_cli', autospec=True)
+        self.cli = cli_patch.start()
+        self.addCleanup(cli_patch.stop)
+        self.arn = 'arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/offline'
+        self.cli.deployed_runtime_arn.return_value = self.arn
+
+    def test_deployment_sequence_and_configuration(self):
+        with patch.object(config, 'GUARDRAIL_ID', 'ignore-config-id'), patch.object(config, 'GUARDRAIL_VERSION', 'DRAFT'):
+            result = ao.deploy_to_agentcore_runtime(object(), 'published-id', '12')
+        self.assertEqual(result, self.arn)
+        expected_env = {key: value for key, value in self.settings.items() if key != 'AGENTCORE_ROLE_ARN'}
+        expected_env.update(GUARDRAIL_ID='published-id', GUARDRAIL_VERSION='12')
+        self.assertEqual(self.cli.mock_calls, [
+            call.stage_runtime_code(),
+            call.configure_runtime(env_vars=expected_env, network_mode='PUBLIC', protocol='HTTP', execution_role_arn=self.settings['AGENTCORE_ROLE_ARN']),
+            call.deploy(),
+            call.deployed_runtime_arn(),
+        ])
+
+    def test_empty_kb_ids_are_allowed_before_task5(self):
+        with patch.multiple(config, RETURNS_KB_ID='', SHIPPING_KB_ID='', WARRANTY_KB_ID=''):
+            self.assertEqual(ao.deploy_to_agentcore_runtime(None, 'guardrail', '1'), self.arn)
+        env = self.cli.configure_runtime.call_args.kwargs['env_vars']
+        for key in ('RETURNS_KB_ID', 'SHIPPING_KB_ID', 'WARRANTY_KB_ID'):
+            self.assertEqual(env[key], '')
+
+    def test_guardrail_validation_precedes_all_cli_operations(self):
+        for guardrail_id in ['', '  ', None, 123]:
+            with self.subTest(guardrail_id=guardrail_id):
+                with self.assertRaisesRegex(ValueError, 'GUARDRAIL_ID'):
+                    ao.deploy_to_agentcore_runtime(None, guardrail_id, '1')
+        for version in ['', None, 'DRAFT', '0', '-1', '01', '1.0', 'abc', ' 1 ', '١', 1, True]:
+            with self.subTest(version=version):
+                with self.assertRaisesRegex(ValueError, 'GUARDRAIL_VERSION.*published positive integer'):
+                    ao.deploy_to_agentcore_runtime(None, 'guardrail', version)
+        self.assertEqual(self.cli.mock_calls, [])
+
+    def test_missing_runtime_configuration_precedes_cli_operations(self):
+        for name in ('AWS_REGION', 'PROJECT_NAME', 'AGENT_LOG_GROUP', 'AGENTCORE_ROLE_ARN'):
+            for value in ['', '  ', None]:
+                with self.subTest(name=name, value=value), patch.object(config, name, value):
+                    with self.assertRaisesRegex(ValueError, name):
+                        ao.deploy_to_agentcore_runtime(None, 'guardrail', '1')
+        self.assertEqual(self.cli.mock_calls, [])
+
+    def test_missing_runtime_arn_raises_clear_error(self):
+        for value in ['', '  ', None]:
+            with self.subTest(value=value):
+                self.cli.deployed_runtime_arn.return_value = value
+                with self.assertRaisesRegex(RuntimeError, 'no runtime ARN'):
+                    ao.deploy_to_agentcore_runtime(None, 'guardrail', '1')
+
+    def test_cli_errors_propagate_and_stop_sequence(self):
+        steps = ['stage_runtime_code', 'configure_runtime', 'deploy', 'deployed_runtime_arn']
+        for index, step in enumerate(steps):
+            with self.subTest(step=step):
+                self.cli.reset_mock(side_effect=True)
+                failure = RuntimeError(f'{step} failed')
+                getattr(self.cli, step).side_effect = failure
+                with self.assertRaises(RuntimeError) as caught:
+                    ao.deploy_to_agentcore_runtime(None, 'guardrail', '1')
+                self.assertIs(caught.exception, failure)
+                self.assertEqual([entry[0] for entry in self.cli.mock_calls], steps[:index + 1])
 
 
 def main():
