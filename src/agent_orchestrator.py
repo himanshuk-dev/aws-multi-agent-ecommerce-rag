@@ -1624,29 +1624,72 @@ def deploy_to_agentcore_runtime(
 # ═══════════════════════════════════════════════════════
 
 def configure_memory(runtime_arn: str) -> str:
-    """
-    Enable AgentCore Memory for session-scoped conversational context.
-    Uses SESSION_SUMMARY memory type with 7-day storage.
+    """Create or reuse session-summary Memory with seven-day event retention.
 
-    Returns:
-        The memory resource ARN
+    Memory is a separate control-plane resource, not a runtime configuration
+    field. ``runtime_arn`` preserves the deployment pipeline interface; writing
+    events and retrieving summaries require separate application integration.
     """
     memory_name = config.MEMORY_NAMESPACE.replace('-', '_')
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,47}", memory_name):
+        raise ValueError("MEMORY_NAMESPACE must produce a valid Memory name (1-48 characters)")
+
+    def wait_for_active(memory):
+        memory_id = memory.get('id')
+        memory_arn = memory.get('arn')
+        if not memory_id or not memory_arn:
+            raise RuntimeError("AgentCore Memory response is missing its id or ARN")
+        # At most 30 polls and 300 seconds of sleep. Never return a resource
+        # that is still creating, updating, failed, or being deleted.
+        for attempt in range(31):
+            status = memory.get('status')
+            if status == 'ACTIVE':
+                return memory_arn
+            if status not in (None, 'CREATING', 'UPDATING'):
+                raise RuntimeError(
+                    f"AgentCore Memory entered status {status}: "
+                    f"{memory.get('failureReason', 'activation did not succeed')}"
+                )
+            if attempt == 30:
+                raise TimeoutError("AgentCore Memory did not become ACTIVE within 30 polls")
+            if status is not None:
+                time.sleep(10)
+            memory = agentcore_control.get_memory(memoryId=memory_id).get('memory', {})
+            if not memory.get('status'):
+                raise RuntimeError("AgentCore Memory response is missing its status")
+        raise AssertionError("Unreachable Memory polling state")
+
     existing = agentcore_control.list_memories()
-    for m in existing.get('memories', []):
-        if m['id'].startswith(memory_name):
-            memory_arn = m['arn']
-            print(f"AgentCore Memory already exists: {memory_arn}")
-            return memory_arn
+    while True:
+        for memory in existing.get('memories', []):
+            if memory.get('id', '').startswith(memory_name + '-'):
+                memory_arn = wait_for_active(memory)
+                print(f"AgentCore Memory already exists: {memory_arn}")
+                return memory_arn
+        next_token = existing.get('nextToken')
+        if not next_token:
+            break
+        existing = agentcore_control.list_memories(nextToken=next_token)
 
-    # TODO: Create AgentCore Memory
-    # Use agentcore_control.create_memory() with:
-    #   - name (memory_name), description
-    #   - eventExpiryDuration (7 days)
-    #   - memoryStrategies with summaryMemoryStrategy
-    #   - clientToken for idempotency
-
-    pass
+    request = {
+        'name': memory_name,
+        'description': 'NovaMart customer-support session summaries with seven-day event retention',
+        'eventExpiryDuration': 7,
+        'memoryStrategies': [{
+            'summaryMemoryStrategy': {
+                'name': 'SessionSummary',
+                'description': 'Summarize each customer conversation session',
+                'namespaces': ['/summaries/{actorId}/{sessionId}/'],
+            }
+        }],
+    }
+    # Stable for identical requests, including retries after an uncertain
+    # network result; a changed resource specification receives a new token.
+    request['clientToken'] = hashlib.sha256(
+        (config.AWS_REGION + json.dumps(request, sort_keys=True)).encode('utf-8')
+    ).hexdigest()
+    response = agentcore_control.create_memory(**request)
+    return wait_for_active(response.get('memory', {}))
 
 
 # ═══════════════════════════════════════════════════════

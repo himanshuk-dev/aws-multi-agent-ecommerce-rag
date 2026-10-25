@@ -256,6 +256,130 @@ class DeploymentTests(unittest.TestCase):
                 self.assertEqual([entry[0] for entry in self.cli.mock_calls], steps[:index + 1])
 
 
+
+class MemoryTests(unittest.TestCase):
+    def setUp(self):
+        self.real_control = ao.agentcore_control
+        control_patch = patch.object(ao, 'agentcore_control', spec=ao.agentcore_control)
+        self.control = control_patch.start()
+        self.addCleanup(control_patch.stop)
+        namespace_patch = patch.object(config, 'MEMORY_NAMESPACE', 'novamart-memory')
+        namespace_patch.start()
+        self.addCleanup(namespace_patch.stop)
+        sleep_patch = patch.object(ao.time, 'sleep')
+        self.sleep = sleep_patch.start()
+        self.addCleanup(sleep_patch.stop)
+        self.memory_id = 'novamart_memory-ABCDEFGHIJ'
+        self.arn = f'arn:aws:bedrock-agentcore:us-east-1:123456789012:memory/{self.memory_id}'
+        self.control.list_memories.return_value = {'memories': []}
+        self.control.create_memory.return_value = {'memory': self.memory('ACTIVE')}
+
+    def memory(self, status):
+        from datetime import datetime, timezone
+        return {
+            'id': self.memory_id, 'arn': self.arn, 'name': 'novamart_memory',
+            'eventExpiryDuration': 7, 'status': status,
+            'createdAt': datetime(2026, 1, 1, tzinfo=timezone.utc),
+            'updatedAt': datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }
+
+    def test_creation_matches_installed_service_model_and_activates(self):
+        from botocore.stub import Stubber, ANY
+        expected = {
+            'name': 'novamart_memory',
+            'description': 'NovaMart customer-support session summaries with seven-day event retention',
+            'eventExpiryDuration': 7,
+            'memoryStrategies': [{'summaryMemoryStrategy': {
+                'name': 'SessionSummary',
+                'description': 'Summarize each customer conversation session',
+                'namespaces': ['/summaries/{actorId}/{sessionId}/'],
+            }}],
+            'clientToken': ANY,
+        }
+        with patch.object(ao, 'agentcore_control', self.real_control), Stubber(self.real_control) as stub:
+            stub.add_response('list_memories', {'memories': []}, {})
+            stub.add_response('create_memory', {'memory': self.memory('CREATING')}, expected)
+            stub.add_response('get_memory', {'memory': self.memory('CREATING')}, {'memoryId': self.memory_id})
+            stub.add_response('get_memory', {'memory': self.memory('ACTIVE')}, {'memoryId': self.memory_id})
+            self.assertEqual(ao.configure_memory('offline-runtime'), self.arn)
+            stub.assert_no_pending_responses()
+        self.assertEqual(self.sleep.call_args_list, [call(10), call(10)])
+
+    def test_existing_active_memory_is_reused(self):
+        self.control.list_memories.return_value = {'memories': [self.memory('ACTIVE')]}
+        self.assertEqual(ao.configure_memory('offline-runtime'), self.arn)
+        self.control.create_memory.assert_not_called()
+        self.control.get_memory.assert_not_called()
+        self.sleep.assert_not_called()
+
+    def test_existing_resource_is_found_on_later_page_and_awaited(self):
+        unrelated = dict(self.memory('ACTIVE'), id='novamart_memory_other-ABCDEFGHIJ')
+        self.control.list_memories.side_effect = [
+            {'memories': [unrelated], 'nextToken': 'next-page'},
+            {'memories': [self.memory('UPDATING')]},
+        ]
+        self.control.get_memory.return_value = {'memory': self.memory('ACTIVE')}
+        self.assertEqual(ao.configure_memory('offline-runtime'), self.arn)
+        self.assertEqual(self.control.list_memories.call_args_list, [call(), call(nextToken='next-page')])
+        self.control.get_memory.assert_called_once_with(memoryId=self.memory_id)
+        self.control.create_memory.assert_not_called()
+
+    def test_client_token_is_stable_for_identical_creation_requests(self):
+        self.assertEqual(ao.configure_memory('offline-runtime'), self.arn)
+        first = self.control.create_memory.call_args.kwargs
+        self.assertRegex(first['clientToken'], r'^[0-9a-f]{64}$')
+        self.assertEqual(ao.configure_memory('offline-runtime'), self.arn)
+        self.assertEqual(first, self.control.create_memory.call_args.kwargs)
+
+    def test_failed_or_deleting_existing_resource_is_not_returned(self):
+        for status in ['FAILED', 'DELETING']:
+            with self.subTest(status=status):
+                self.control.list_memories.return_value = {'memories': [self.memory(status)]}
+                with self.assertRaisesRegex(RuntimeError, status):
+                    ao.configure_memory('offline-runtime')
+        self.control.create_memory.assert_not_called()
+
+    def test_creation_and_activation_failures_are_reported(self):
+        self.control.create_memory.return_value = {'memory': dict(self.memory('FAILED'), failureReason='strategy failed')}
+        with self.assertRaisesRegex(RuntimeError, 'FAILED: strategy failed'):
+            ao.configure_memory('offline-runtime')
+        self.control.create_memory.return_value = {'memory': self.memory('CREATING')}
+        self.control.get_memory.return_value = {'memory': dict(self.memory('FAILED'), failureReason='activation failed')}
+        with self.assertRaisesRegex(RuntimeError, 'FAILED: activation failed'):
+            ao.configure_memory('offline-runtime')
+
+    def test_aws_api_errors_propagate_without_false_success(self):
+        from botocore.exceptions import ClientError
+        for method in ['list_memories', 'create_memory', 'get_memory']:
+            with self.subTest(method=method):
+                self.control.reset_mock(side_effect=True)
+                self.control.create_memory.return_value = {'memory': self.memory('CREATING')}
+                error = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'denied'}}, method)
+                getattr(self.control, method).side_effect = error
+                with self.assertRaises(ClientError) as caught:
+                    ao.configure_memory('offline-runtime')
+                self.assertIs(caught.exception, error)
+
+    def test_activation_polling_is_bounded(self):
+        self.control.create_memory.return_value = {'memory': self.memory('CREATING')}
+        self.control.get_memory.return_value = {'memory': self.memory('CREATING')}
+        with self.assertRaisesRegex(TimeoutError, '30 polls'):
+            ao.configure_memory('offline-runtime')
+        self.assertEqual(self.control.get_memory.call_count, 30)
+        self.assertEqual(self.sleep.call_args_list, [call(10)] * 30)
+
+    def test_malformed_responses_do_not_return_success(self):
+        for response in [{}, {'memory': {'id': self.memory_id}}, {'memory': {'arn': self.arn}}]:
+            with self.subTest(response=response):
+                self.control.create_memory.return_value = response
+                with self.assertRaisesRegex(RuntimeError, 'missing its id or ARN'):
+                    ao.configure_memory('offline-runtime')
+        self.control.create_memory.return_value = {'memory': self.memory('CREATING')}
+        self.control.get_memory.return_value = {'memory': {}}
+        with self.assertRaisesRegex(RuntimeError, 'missing its status'):
+            ao.configure_memory('offline-runtime')
+
+
 def main():
     global config, ao, cli
     from botocore.endpoint import Endpoint
