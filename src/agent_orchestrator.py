@@ -205,6 +205,36 @@ def _update_workflow_state(session_id: str, updates: dict,
 #  2.A - INVENTORY AGENT
 # ───────────────────────────────────────────────────────
 
+def _build_bedrock_model(model_id: str, temperature: float) -> BedrockModel:
+    """Build a model with optional, explicitly published guardrail protection."""
+    guardrail_id = config.GUARDRAIL_ID
+    guardrail_version = config.GUARDRAIL_VERSION
+    settings = {}
+    if guardrail_id or guardrail_version:
+        if not guardrail_id or not guardrail_version:
+            raise ValueError(
+                "GUARDRAIL_ID and GUARDRAIL_VERSION must both be configured, "
+                "or both unset for local development"
+            )
+        if not isinstance(guardrail_version, str) or not re.fullmatch(
+            r"[1-9][0-9]*", guardrail_version
+        ):
+            raise ValueError(
+                "GUARDRAIL_VERSION must be a published positive numeric version; "
+                "DRAFT is not supported for inference"
+            )
+        settings = {
+            'guardrail_id': guardrail_id,
+            'guardrail_version': guardrail_version,
+        }
+    return BedrockModel(
+        model_id=model_id,
+        region_name=config.AWS_REGION,
+        temperature=temperature,
+        **settings,
+    )
+
+
 def build_inventory_agent() -> Agent:
     """
     Build the Inventory Agent.
@@ -213,9 +243,8 @@ def build_inventory_agent() -> Agent:
     only retrieves data for the OrchestratorAgent to share with downstream agents.
     """
 
-    model = BedrockModel(
+    model = _build_bedrock_model(
         model_id=config.WORKER_MODEL_ID,
-        region_name=config.AWS_REGION,
         temperature=0.1,
     )
 
@@ -390,9 +419,8 @@ def build_refund_agent() -> Agent:
     """
 
     # Configure the Refund Agent's Bedrock model
-    model = BedrockModel(
+    model = _build_bedrock_model(
         model_id=config.WORKER_MODEL_ID,
-        region_name=config.AWS_REGION,
         temperature=0.1,
     )
 
@@ -633,9 +661,8 @@ def build_policy_agent() -> Agent:
             return "Unable to retrieve the returns policy at this time."
 
     returns_retriever = Agent(
-        model=BedrockModel(
+        model=_build_bedrock_model(
             model_id=config.WORKER_MODEL_ID,
-            region_name=config.AWS_REGION,
             temperature=0.0,
         ),
         system_prompt=(
@@ -672,9 +699,8 @@ def build_policy_agent() -> Agent:
     
 
     shipping_retriever = Agent(
-        model=BedrockModel(
+        model=_build_bedrock_model(
             model_id=config.WORKER_MODEL_ID,
-            region_name=config.AWS_REGION,
             temperature=0.0,
         ),
         system_prompt=(
@@ -710,9 +736,8 @@ def build_policy_agent() -> Agent:
             return "Unable to retrieve the warranty policy at this time."
 
     warranty_retriever = Agent(
-        model=BedrockModel(
+        model=_build_bedrock_model(
             model_id=config.WORKER_MODEL_ID,
-            region_name=config.AWS_REGION,
             temperature=0.0,
         ),
         system_prompt=(
@@ -802,9 +827,8 @@ def build_policy_agent() -> Agent:
 
         return combined_results
 
-    model = BedrockModel(
+    model = _build_bedrock_model(
         model_id=config.WORKER_MODEL_ID,
-        region_name=config.AWS_REGION,
         temperature=0.2,
     )
 
@@ -861,9 +885,8 @@ def build_communication_agent() -> Agent:
     """
 
     # Create a BedrockModel
-    model = BedrockModel(
+    model = _build_bedrock_model(
         model_id=config.WORKER_MODEL_ID,
-        region_name=config.AWS_REGION,
         temperature=0.3,
     )
 
@@ -993,9 +1016,8 @@ def build_orchestrator_agent(
     """
 
     # Create the Orchestrator Bedrock model
-    model = BedrockModel(
+    model = _build_bedrock_model(
         model_id=config.ORCHESTRATOR_MODEL_ID,
-        region_name=config.AWS_REGION,
         temperature=0.0,
     )
 

@@ -15,6 +15,40 @@ sys.path[:0] = [str(ROOT / 'src'), str(ROOT), str(ROOT / 'tests')]
 
 
 class CompatibilityTests(unittest.TestCase):
+    def test_all_eight_models_use_published_guardrail_and_original_settings(self):
+        expected = [
+            (config.WORKER_MODEL_ID, 0.1),  # inventory
+            (config.WORKER_MODEL_ID, 0.1),  # refund
+            (config.WORKER_MODEL_ID, 0.0),  # returns retriever
+            (config.WORKER_MODEL_ID, 0.0),  # shipping retriever
+            (config.WORKER_MODEL_ID, 0.0),  # warranty retriever
+            (config.WORKER_MODEL_ID, 0.2),  # policy coordinator
+            (config.WORKER_MODEL_ID, 0.3),  # communication
+            (config.ORCHESTRATOR_MODEL_ID, 0.0),
+        ]
+        for guardrail_id, version in [('guardrail-test', '12'), ('', '')]:
+            with self.subTest(guardrail_configured=bool(guardrail_id)), patch.object(config, 'GUARDRAIL_ID', guardrail_id), patch.object(config, 'GUARDRAIL_VERSION', version), patch.object(ao, 'BedrockModel', wraps=ao.BedrockModel) as model:
+                ao.build_agent_graph()
+                self.assertEqual(model.call_count, 8)
+                for call, (model_id, temperature) in zip(model.call_args_list, expected):
+                    kwargs = {'model_id': model_id, 'temperature': temperature, 'region_name': config.AWS_REGION}
+                    if guardrail_id:
+                        kwargs.update(guardrail_id=guardrail_id, guardrail_version=version)
+                    self.assertEqual(call.kwargs, kwargs)
+
+    def test_guardrail_configuration_fails_before_model_creation(self):
+        for guardrail_id, version, message in [
+            ('guardrail-test', '', 'must both be configured'),
+            ('', '1', 'must both be configured'),
+            ('', 'DRAFT', 'must both be configured'),
+            *[('guardrail-test', version, 'published positive numeric version')
+              for version in ['DRAFT', '0', '-1', '1.0', 'abc', ' 1 ', '١', 1]],
+        ]:
+            with self.subTest(version=version, id_configured=bool(guardrail_id)), patch.object(config, 'GUARDRAIL_ID', guardrail_id), patch.object(config, 'GUARDRAIL_VERSION', version), patch.object(ao, 'BedrockModel') as model:
+                with self.assertRaisesRegex(ValueError, message):
+                    ao._build_bedrock_model(config.WORKER_MODEL_ID, 0.1)
+                model.assert_not_called()
+
     def test_existing_task2_regression(self):
         regression = importlib.import_module('test_agent')
         regression.score.update(earned=0, possible=0)
@@ -149,7 +183,7 @@ class CompatibilityTests(unittest.TestCase):
 def main():
     global config, ao, cli
     from botocore.endpoint import Endpoint
-    env = {'AWS_ACCESS_KEY_ID': 'offline', 'AWS_SECRET_ACCESS_KEY': 'offline', 'AWS_SESSION_TOKEN': 'offline', 'AWS_EC2_METADATA_DISABLED': 'true', 'AWS_DEFAULT_REGION': 'us-east-1'}
+    env = {'AWS_ACCESS_KEY_ID': 'offline', 'AWS_SECRET_ACCESS_KEY': 'offline', 'AWS_SESSION_TOKEN': 'offline', 'AWS_EC2_METADATA_DISABLED': 'true', 'AWS_DEFAULT_REGION': 'us-east-1', 'GUARDRAIL_ID': '', 'GUARDRAIL_VERSION': ''}
     with patch.dict(os.environ, env), patch('dotenv.load_dotenv'), patch.object(Endpoint, '_send', side_effect=AssertionError('AWS calls forbidden in offline tests')):
         fake = MagicMock()
         fake.get_caller_identity.return_value = {'Account': '123456789012'}
