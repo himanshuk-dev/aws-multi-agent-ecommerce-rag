@@ -336,6 +336,19 @@ All screenshots are historical captures of the fictional dataset. Some show inte
 | [10 — Full automated result](screenshots/10_full_test_suite_120_pass.png) | Official suite achieved 120/120 with AWS-backed checks. |
 | [11 — X-Ray Service Map](screenshots/11_xray_service_map.png) | Connected orchestrator, policy, communication, and three KB nodes. |
 | [12 — Live AgentCore policy invocation](screenshots/12_live_agentcore_policy_invocation.png) | Deployed-runtime response explaining the Premium 60-day return window. |
+| [13 — Returns KB overview](screenshots/13_returns_kb_vector_store.png) | Returns KB identity, Available status, and associated S3 data source. |
+| [13a — Returns vector configuration](screenshots/13a_returns_kb_s3_vectors_configuration.png) | Titan Text Embeddings v2 with 1,024 dimensions and the native S3 Vectors `returns-policy-index`. |
+| [14 — Returns synchronization](screenshots/14_returns_kb_data_source_sync.png) | Completed ingestion with two documents added, zero failures, and indexed documents. |
+| [15 — Shipping KB overview](screenshots/15_shipping_kb_vector_store.png) | Shipping KB identity, Available status, and associated S3 data source. |
+| [15a — Shipping vector configuration](screenshots/15a_shipping_kb_vector_configuration.png) | Titan Text Embeddings v2 with 1,024 dimensions and the native S3 Vectors `shipping-policy-index`. |
+| [16 — Shipping synchronization](screenshots/16_shipping_kb_data_source_sync.png) | Completed ingestion with two documents added, zero failures, and indexed documents. |
+| [17 — Warranty KB overview](screenshots/17_warranty_kb_vector_store.png) | Warranty KB identity, Available status, and associated S3 data source. |
+| [17a — Warranty vector configuration](screenshots/17a_warranty_kb_vector_configuration.png) | Titan Text Embeddings v2 with 1,024 dimensions and the native S3 Vectors `warranty-policy-index`. |
+| [18 — Warranty synchronization](screenshots/18_warranty_kb_data_source_sync.png) | Completed ingestion with two documents added, zero failures, and indexed documents. |
+| [19 — Live local orchestration execution](screenshots/19_orchestrator_test_passed.png) | Execution of `python src/agent_orchestrator.py test` with three completed scenarios and published trace IDs. Completion does not establish behavioral success: the return scenario reports an inventory lookup error and the math scenario refuses the calculation. |
+| [20 — Local-test X-Ray Service Map](screenshots/20_xray_service_map.png) | Connected NovaMart orchestrator, Inventory, Refund, Policy, Communication, and all three Knowledge Base nodes; trace connectivity does not establish successful business outcomes. |
+
+The storage captures show the native bucket `udacity-agentcore-policy-vectors`. They establish the actual KB backing store and index names, but do not resolve its mismatch with the foundation stack's regular S3 `VectorStoreBucket` described above.
 
 ## Observability
 
