@@ -1702,14 +1702,24 @@ def configure_observability(runtime_arn: str) -> None:
     - Agent logs → CloudWatch Logs at INFO level
     - Execution traces → AWS X-Ray at 100% sampling
     """
-    runtime_id = runtime_arn.split('/')[-1]
+    logging_configuration = {
+        "cloudWatchConfig": {
+            "logGroupName": config.AGENT_LOG_GROUP,
+            "logLevel": "INFO",
+            "enabled": True,
+        },
+        "xRayConfig": {
+            "enabled": True,
+            "samplingRate": 1.0,
+        },
+    }
 
-    # TODO (Task 6): Build the CloudWatch/X-Ray logging configuration and
-    # pass it with runtime_arn to apply_observability_config(). The restored
-    # helper applies real resources and CLI environment settings; the former
-    # put_agent_runtime_logging_configuration SDK shim is not supported.
-
-    pass
+    try:
+        apply_observability_config(runtime_arn, logging_configuration)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to configure observability for runtime {runtime_arn}"
+        ) from exc
 
 
 # ═══════════════════════════════════════════════════════
