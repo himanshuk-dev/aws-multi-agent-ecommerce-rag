@@ -45,14 +45,22 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Strands Agents SDK - see: https://github.com/strands-agents/sdk-python
-from strands import Agent, tool
+from strands import Agent
 from strands.models import BedrockModel
 from boto3.dynamodb.conditions import Key
 
 import config
 from bedrock_kb_retrieval import retrieve_from_knowledge_base, format_kb_results
 import agentcore_cli
-from agent_observability import apply_observability_config, wait_for_runtime_ready
+from agent_observability import (
+    apply_observability_config,
+    wait_for_runtime_ready,
+    tracer,
+    tool,
+    trace_kb_retrieval,
+    setup_logging,
+    flush_logs,
+)
 
 from datetime import date
 
@@ -648,11 +656,12 @@ def build_policy_agent() -> Agent:
             return "A policy question is required."
 
         try:
-            results = retrieve_from_knowledge_base(
-                kb_id=config.RETURNS_KB_ID,
-                query=query,
-                top_k=3,
-            )
+            with trace_kb_retrieval(config.RETURNS_KB_ID):
+                results = retrieve_from_knowledge_base(
+                    kb_id=config.RETURNS_KB_ID,
+                    query=query,
+                    top_k=3,
+                )
 
             return format_kb_results(results)
 
@@ -685,11 +694,12 @@ def build_policy_agent() -> Agent:
             return "A policy question is required."
 
         try:
-            results = retrieve_from_knowledge_base(
-                kb_id=config.SHIPPING_KB_ID,
-                query=query,
-                top_k=3,
-            )
+            with trace_kb_retrieval(config.SHIPPING_KB_ID):
+                results = retrieve_from_knowledge_base(
+                    kb_id=config.SHIPPING_KB_ID,
+                    query=query,
+                    top_k=3,
+                )
 
             return format_kb_results(results)
 
@@ -723,11 +733,12 @@ def build_policy_agent() -> Agent:
             return "A policy question is required."
 
         try:
-            results = retrieve_from_knowledge_base(
-                kb_id=config.WARRANTY_KB_ID,
-                query=query,
-                top_k=3,
-            )
+            with trace_kb_retrieval(config.WARRANTY_KB_ID):
+                results = retrieve_from_knowledge_base(
+                    kb_id=config.WARRANTY_KB_ID,
+                    query=query,
+                    top_k=3,
+                )
 
             return format_kb_results(results)
 
@@ -1143,12 +1154,7 @@ def build_orchestrator_agent(
                 return "Error: Initialize the workflow session first."
 
             response = policy_agent(
-                f"Customer request: {request}\n"
-                "Retrieve relevant NovaMart policy information using "
-                "the available policy retrieval tools. "
-                "Use only verified retrieved evidence. "
-                "If policy information cannot be verified, "
-                "clearly explain the limitation."
+                f"NovaMart customer policy question: {request}"
             )
 
             findings = str(response)
@@ -2043,6 +2049,7 @@ def run_serve() -> None:
     """
     from bedrock_agentcore import BedrockAgentCoreApp
 
+    setup_logging()
     app = BedrockAgentCoreApp()
 
     @app.entrypoint
@@ -2059,10 +2066,24 @@ def run_serve() -> None:
             getattr(context, 'session_id', None) or uuid.uuid4().hex
         )
         enriched = f"[Session ID: {session_id}] [Customer ID: {customer_id}] {prompt}"
-        response = build_agent_graph()(enriched)
-        state = _read_workflow_state(session_id) or {}
-        text = _strip_xml_tags(state.get('communication_agent', '') or str(response))
-        return {'result': text, 'session_id': session_id, 'customer_id': customer_id}
+        try:
+            with tracer.trace_request(
+                session_id=session_id,
+                customer_id="redacted",
+                request="",
+            ):
+                response = build_agent_graph()(enriched)
+                state = _read_workflow_state(session_id) or {}
+                text = _strip_xml_tags(
+                    state.get('communication_agent', '') or str(response)
+                )
+                return {
+                    'result': text,
+                    'session_id': session_id,
+                    'customer_id': customer_id,
+                }
+        finally:
+            flush_logs()
 
     app.run()
 
