@@ -2112,7 +2112,13 @@ if __name__ == '__main__':
         )
 
         test_cases = [
-            ("CUST-001", "I want to return my wireless headphones from order ORD-27176"),
+            (
+                "CUST-001",
+                "I want to return my Wireless Headphones Pro from order ORD-12142. "
+                "Please check the order status and have the refund specialist evaluate "
+                "my request. If a return has already been requested, explain that a "
+                "duplicate return cannot be created.",
+            ),
             ("CUST-002", "What is the return policy for premium customers?"),
             ("CUST-003", "How much would 5 items at $29.99 be with a 10% discount?"),
         ]
@@ -2136,22 +2142,18 @@ if __name__ == '__main__':
         print(f"  {_C.GRY}{'Strands Agents SDK  +  Amazon Bedrock AgentCore':^{W}}{_C.RESET}")
         print(f"  {_C.GRY}{'=' * W}{_C.RESET}")
 
-        # ── Test customers ────────────────────────────────────────────────
+        # ── Confirmed test orders ──────────────────────────────────────────
         print()
         print(f"  {_C.GRY}{'─' * W}{_C.RESET}")
-        print(f"  {_C.BOLD}Test Customers{_C.RESET}")
+        print(f"  {_C.BOLD}Confirmed Test Orders{_C.RESET}")
         print(f"  {_C.GRY}{'─' * W}{_C.RESET}")
-        print(f"  {_C.GRY}{'ID':<10}  {'Name':<18}  {'Tier':<10}  {'Order':<12}  Product{_C.RESET}")
-        print(f"  {_C.GRY}{'─'*8}  {'─'*16}  {'─'*8}  {'─'*10}  {'─'*20}{_C.RESET}")
-        for cid, name, tier, order, product in [
-            ("CUST-001", "Alice Johnson", "Premium",  "ORD-27176", "Sony headphones"),
-            ("CUST-002", "Bob Smith",     "Standard", "ORD-28001", "mechanical keyboard"),
-            ("CUST-003", "Carol Davis",   "Premium",  "ORD-29001", "laptop"),
-            ("CUST-004", "David Lee",     "Standard", "ORD-30001", "phone case"),
+        print(f"  {_C.GRY}{'Customer':<10}  {'Order':<12}  Product{_C.RESET}")
+        for cid, order, product, status, eligible in [
+            ("CUST-001", "ORD-12142", "Wireless Headphones Pro", "return_requested", "false"),
+            ("CUST-001", "ORD-59651", "Bluetooth Speaker", "delivered", "true"),
         ]:
-            tier_col = _C.INV if tier == 'Premium' else _C.GRY
-            print(f"  {_C.BOLD}{cid}{_C.RESET}  {name:<18}  "
-                  f"{tier_col}{tier:<10}{_C.RESET}  {order}  {product}")
+            print(f"  {_C.BOLD}{cid}{_C.RESET}  {order:<12}  {product}")
+            print(f"    {_C.GRY}status={status}, return_eligible={eligible}{_C.RESET}")
         print(f"  {_C.GRY}{'─' * W}{_C.RESET}")
         print()
 

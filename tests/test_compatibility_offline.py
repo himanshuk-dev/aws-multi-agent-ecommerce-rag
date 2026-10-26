@@ -132,7 +132,8 @@ class CompatibilityTests(unittest.TestCase):
         app.entrypoint.side_effect = lambda fn: handlers.append(fn) or fn
         sdk = types.ModuleType('bedrock_agentcore')
         sdk.BedrockAgentCoreApp = MagicMock(return_value=app)
-        with patch.dict(sys.modules, bedrock_agentcore=sdk), patch.object(ao, 'build_agent_graph') as graph, patch.object(ao, '_read_workflow_state', return_value={'communication_agent': '<answer>Done</answer>'}):
+        with patch.dict(sys.modules, bedrock_agentcore=sdk), patch.object(ao, 'build_agent_graph') as graph, patch.object(ao, '_read_workflow_state', return_value={'communication_agent': '<answer>Done</answer>'}), patch.object(ao.tracer, '_xray') as xray:
+            xray.return_value.put_trace_segments.return_value = {'UnprocessedTraceSegments': []}
             ao.run_serve()
             app.run.assert_called_once_with()
             invoke = handlers[0]
@@ -141,6 +142,11 @@ class CompatibilityTests(unittest.TestCase):
             response = invoke({'prompt': 'hello', 'session_id': 'session', 'customer_id': 'customer'})
             graph.return_value.assert_called_once_with('[Session ID: session] [Customer ID: customer] hello')
             self.assertEqual(response, {'result': 'Done', 'session_id': 'session', 'customer_id': 'customer'})
+            xray.return_value.put_trace_segments.assert_called_once()
+            document = json.loads(xray.return_value.put_trace_segments.call_args.kwargs['TraceSegmentDocuments'][0])
+            self.assertEqual(document['name'], 'NovaMart-Orchestrator')
+            self.assertEqual(document['annotations']['customer_id'], 'redacted')
+            self.assertEqual(document['metadata']['novamart']['request'], '')
 
     def test_packaged_marker_selects_serve(self):
         import runpy
@@ -383,17 +389,43 @@ class MemoryTests(unittest.TestCase):
 def main():
     global config, ao, cli
     from botocore.endpoint import Endpoint
-    env = {'AWS_ACCESS_KEY_ID': 'offline', 'AWS_SECRET_ACCESS_KEY': 'offline', 'AWS_SESSION_TOKEN': 'offline', 'AWS_EC2_METADATA_DISABLED': 'true', 'AWS_DEFAULT_REGION': 'us-east-1', 'GUARDRAIL_ID': '', 'GUARDRAIL_VERSION': ''}
-    with patch.dict(os.environ, env), patch('dotenv.load_dotenv'), patch.object(Endpoint, '_send', side_effect=AssertionError('AWS calls forbidden in offline tests')):
+    env = {
+        'AWS_ACCESS_KEY_ID': 'offline',
+        'AWS_SECRET_ACCESS_KEY': 'offline',
+        'AWS_SESSION_TOKEN': 'offline',
+        'AWS_EC2_METADATA_DISABLED': 'true',
+        'AWS_DEFAULT_REGION': 'us-east-1',
+        'AWS_REGION': 'us-east-1',
+        'PROJECT_NAME': 'udacity-agentcore',
+        'GUARDRAIL_ID': '',
+        'GUARDRAIL_VERSION': '',
+        'AGENT_LOG_TO_CLOUDWATCH': 'false',
+        'AGENT_TRACING_ENABLED': 'true',
+        'AGENT_TRACE_SAMPLING_RATE': '1.0',
+    }
+    with patch.dict(os.environ, env), patch('dotenv.load_dotenv'), patch.object(Endpoint, '_send', side_effect=AssertionError('AWS calls forbidden in offline tests')) as network_send:
         fake = MagicMock()
         fake.get_caller_identity.return_value = {'Account': '123456789012'}
         keys = ['OrdersTable', 'CustomersTable', 'WorkflowStateTable', 'PolicyBucket', 'VectorBucket', 'AgentCoreRoleArn', 'AgentLogGroup']
         fake.get_paginator.return_value.paginate.return_value = [{'Exports': [{'Name': f'udacity-agentcore-{key}', 'Value': 'offline-' + key} for key in keys]}]
         with patch.dict(os.environ, PROJECT_NAME='udacity-agentcore'), patch('boto3.client', return_value=fake):
             config = importlib.import_module('config')
+            # Config now resolves AWS exports lazily. Load the fake exports and
+            # stable values while the AWS mock is active, before tests patch
+            # PROJECT_NAME or access these attributes through patch.multiple().
+            config._load_cf_exports()
+            for name in (
+                'ACCOUNT_ID', 'ORDERS_TABLE', 'CUSTOMERS_TABLE',
+                'WORKFLOW_STATE_TABLE', 'POLICY_BUCKET', 'VECTOR_STORE_BUCKET',
+                'AGENTCORE_ROLE_ARN', 'AGENT_LOG_GROUP',
+            ):
+                getattr(config, name)
         ao = importlib.import_module('agent_orchestrator')
         cli = importlib.import_module('agentcore_cli')
-        unittest.main()
+        program = unittest.main(exit=False)
+        # Also catch network attempts swallowed by best-effort instrumentation.
+        network_send.assert_not_called()
+        raise SystemExit(0 if program.result.wasSuccessful() else 1)
 
 
 if __name__ == '__main__':
