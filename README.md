@@ -312,6 +312,12 @@ The recorded result includes a READY PUBLIC/HTTP runtime, a published guardrail,
 
 The Service Map shows `NovaMart-Orchestrator`, `PolicyAgent`, `CommunicationAgent`, and the Returns, Shipping, and Warranty KB service nodes connected in AWS. It demonstrates recorded telemetry delivery for the policy path; it does not show every order/refund route or establish the exact nested timing of a single request. The **final official test run found no recent NovaMart traces** in its six-hour query window, although tracing configuration passed and a CloudWatch log stream was present. Earlier X-Ray delivery was captured in this screenshot. This distinction preserves the evidence without implying a fresh end-to-end trace was produced by the final suite.
 
+### Live AgentCore Policy Invocation
+
+![Live AgentCore Runtime policy invocation returning the Premium 60-day return window](screenshots/12_live_agentcore_policy_invocation.png)
+
+This recorded invocation calls the deployed AgentCore Runtime through `invoke_agent()` and returns the Premium **60-day return window**, alongside the application session and fictional customer identifiers. It demonstrates a successful live policy response; it does not by itself establish the internal agent routing sequence or X-Ray trace delivery. Described return procedures are policy information, not evidence that this application executed a refund.
+
 ### Project Evidence
 
 All screenshots are historical captures of the fictional dataset. Some show intermediate implementation stages; the current source and final suite are the authority for present behavior.
@@ -329,6 +335,7 @@ All screenshots are historical captures of the fictional dataset. Some show inte
 | [09 — Three Knowledge Bases](screenshots/09_bedrock_knowledge_bases.png) | Three available KBs with recorded synchronization dates. |
 | [10 — Full automated result](screenshots/10_full_test_suite_120_pass.png) | Official suite achieved 120/120 with AWS-backed checks. |
 | [11 — X-Ray Service Map](screenshots/11_xray_service_map.png) | Connected orchestrator, policy, communication, and three KB nodes. |
+| [12 — Live AgentCore policy invocation](screenshots/12_live_agentcore_policy_invocation.png) | Deployed-runtime response explaining the Premium 60-day return window. |
 
 ## Observability
 
@@ -379,7 +386,7 @@ Reviewer notes:
 
 - The customer/order dataset and retailer are fictional. Synchronize all KB data sources before retrieval checks; date-dependent seeded orders can age outside their return windows.
 - Final verification achieved **120/120 official points** and **28/28 offline tests**, with zero offline AWS transport attempts. All 77 original assertion sites were retained and five assertions added. Temporary lab credentials and resources can expire or be cleaned up; the repository does not promise an indefinitely accessible endpoint.
-- Deployment validation notes supplied for this submission report that the deployed Policy Agent returned the Premium customer's **60-day return window**, and that a false-positive guardrail intervention was resolved by simplifying the delegated policy prompt while retaining the published guardrail. The current routing code uses a short, task-specific policy prompt. The repository does not preserve a dedicated screenshot/raw runtime transcript of that before/after check.
+- The [live AgentCore invocation screenshot](screenshots/12_live_agentcore_policy_invocation.png) records a successful deployed-runtime response describing the Premium **60-day return window**. Supplied validation notes report that a false-positive guardrail intervention was resolved by simplifying the delegated policy prompt while retaining the published guardrail. The current routing code uses a short, task-specific policy prompt. The screenshot captures the successful response, not a before/after comparison of the guardrail intervention.
 - The final official run passed tracing configuration checks but found no recent NovaMart traces. The supplied earlier validation notes report X-Ray retrieval activity across all three KBs during parallel policy lookup. The Service Map preserves connected KB nodes; the source and full-suite result support parallel dispatch. A saved per-trace timeline would provide stronger evidence of the exact nested hierarchy and concurrent timings.
 - S3 Vectors bucket/index identifiers are not visible in the preserved KB list screenshot, and the current automated KB checks do not explicitly assert `storageConfiguration`. Preserve KB storage-detail evidence if a reviewer needs independent confirmation of this rubric item.
 
