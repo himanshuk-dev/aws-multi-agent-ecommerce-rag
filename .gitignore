@@ -27,3 +27,6 @@ venv
 # ─────────────────────────────────────────────
 payload.json
 response.json
+
+# AgentCore generated deployment artifacts
+/build/
