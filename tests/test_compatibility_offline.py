@@ -386,6 +386,185 @@ class MemoryTests(unittest.TestCase):
             ao.configure_memory('offline-runtime')
 
 
+class LocalTestTracingTests(unittest.TestCase):
+    def setUp(self):
+        from contextlib import ExitStack
+        import agent_observability as obs
+        self.obs = obs
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.output = io.StringIO()
+        import contextlib
+        self.stack.enter_context(contextlib.redirect_stdout(self.output))
+        self.setup = self.stack.enter_context(patch.object(ao, 'setup_logging'))
+        self.flush = self.stack.enter_context(patch.object(ao, 'flush_logs'))
+        self.workers = [object() for _ in range(4)]
+        self.order = []
+        for name, worker in zip(['inventory', 'refund', 'policy', 'communication'], self.workers):
+            def build(name=name, worker=worker):
+                self.order.append(name)
+                return worker
+            self.stack.enter_context(patch.object(ao, f'build_{name}_agent', side_effect=build))
+        self.agent = MagicMock(return_value='offline response')
+        self.builder = self.stack.enter_context(patch.object(ao, 'build_orchestrator_agent', return_value=self.agent))
+        self.tracer = obs.AgentTracer()
+        self.client = MagicMock()
+        self.client.put_trace_segments.return_value = {'UnprocessedTraceSegments': []}
+        self.tracer._client = self.client
+        self.stack.enter_context(patch.object(ao, 'tracer', self.tracer))
+        self.stack.enter_context(patch.object(obs, 'tracer', self.tracer))
+        self.stack.enter_context(patch.dict(os.environ, AGENT_TRACING_ENABLED='true', AGENT_TRACE_SAMPLING_RATE='1.0'))
+
+    def documents(self):
+        return [json.loads(c.kwargs['TraceSegmentDocuments'][0])
+                for c in self.client.put_trace_segments.call_args_list]
+
+    def test_three_original_scenarios_have_distinct_redacted_roots(self):
+        ao.run_test_scenarios()
+        self.setup.assert_called_once_with(to_cloudwatch=True)
+        self.flush.assert_called_once_with()
+        self.assertEqual(self.order, ['inventory', 'refund', 'policy', 'communication'])
+        self.builder.assert_called_once_with(*self.workers)
+        queries = [
+            ('CUST-001', 'I want to return my Wireless Headphones Pro from order ORD-12142. '
+             'Please check the order status and have the refund specialist evaluate '
+             'my request. If a return has already been requested, explain that a '
+             'duplicate return cannot be created.'),
+            ('CUST-002', 'What is the return policy for premium customers?'),
+            ('CUST-003', 'How much would 5 items at $29.99 be with a 10% discount?'),
+        ]
+        docs = self.documents()
+        self.assertEqual(len(docs), 3)
+        self.assertEqual(len({d['trace_id'] for d in docs}), 3)
+        self.assertEqual(len({d['annotations']['session_id'] for d in docs}), 3)
+        for number, (d, c, (customer, query)) in enumerate(zip(docs, self.agent.call_args_list, queries), 1):
+            session = d['annotations']['session_id']
+            self.assertEqual(c.args, (f'[Session ID: {session}] [Customer ID: {customer}] {query}',))
+            self.assertEqual(d['name'], 'NovaMart-Orchestrator')
+            self.assertEqual(d['annotations']['customer_id'], 'redacted')
+            self.assertEqual(d['metadata']['novamart']['request'], '')
+            self.assertIn(f'Scenario: {number} | Session: {session} | Workflow: COMPLETED | Trace: {d["trace_id"]} | Publication: PUBLISHED', self.output.getvalue())
+        self.assertIsNone(self.tracer._root)
+        self.assertEqual(self.tracer._open, [])
+
+    def test_cli_test_dispatch_calls_runner_only(self):
+        # Execute the actual __main__ block with isolated entry-point doubles.
+        import ast
+        tree = ast.parse((ROOT / 'src/agent_orchestrator.py').read_text())
+        main = tree.body[-1]
+        self.assertIsInstance(main, ast.If)
+        runner, serve, deploy = MagicMock(), MagicMock(), MagicMock()
+        namespace = dict(vars(ao), __name__='__main__', run_test_scenarios=runner,
+                         run_serve=serve, deploy_all=deploy)
+        with patch.object(sys, 'argv', ['src/agent_orchestrator.py', 'test']):
+            exec(compile(ast.Module(body=[main], type_ignores=[]), '<cli-dispatch>', 'exec'), namespace)
+        runner.assert_called_once_with()
+        serve.assert_not_called()
+        deploy.assert_not_called()
+
+    def test_worker_and_threaded_kb_children_without_duplicate_spans(self):
+        from concurrent.futures import ThreadPoolExecutor
+        ids = ['offline-returns', 'offline-shipping', 'offline-warranty']
+        with patch.object(config, 'RETURNS_KB_ID', ids[0]), patch.object(config, 'SHIPPING_KB_ID', ids[1]), patch.object(config, 'WARRANTY_KB_ID', ids[2]):
+            def retrieve(kb):
+                with ao.trace_kb_retrieval(kb):
+                    return 'passage'
+            @self.obs._traced
+            def search_all_policies():
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    return list(pool.map(retrieve, ids))
+            @self.obs._traced
+            def route_to_policy_agent():
+                return search_all_policies()
+            self.agent.side_effect = lambda prompt: route_to_policy_agent()
+            ao.run_test_scenarios()
+        for d in self.documents():
+            self.assertEqual(len(d['subsegments']), 1)
+            worker = d['subsegments'][0]
+            self.assertEqual((worker['name'], worker['namespace']), ('PolicyAgent', 'remote'))
+            fanout = worker['subsegments'][0]
+            self.assertEqual(fanout['name'], 'search_all_policies')
+            self.assertCountEqual([n['name'] for n in fanout['subsegments']],
+                                  ['KnowledgeBase:returns', 'KnowledgeBase:shipping', 'KnowledgeBase:warranty'])
+            self.assertTrue(all(n['namespace'] == 'remote' and not n.get('subsegments') for n in fanout['subsegments']))
+
+    def test_scenario_exception_propagates_publishes_fault_and_flushes(self):
+        error = RuntimeError('scenario failed')
+        self.agent.side_effect = error
+        before = list(self.obs.logger.filters)
+        with self.assertRaises(RuntimeError) as caught:
+            ao.run_test_scenarios()
+        self.assertIs(caught.exception, error)
+        self.flush.assert_called_once_with()
+        self.assertEqual(self.agent.call_count, 1)
+        self.assertTrue(self.documents()[0]['fault'])
+        self.assertIn('Workflow: FAILED', self.output.getvalue())
+        self.assertIn('Publication: PUBLISHED', self.output.getvalue())
+        self.assertEqual(self.obs.logger.filters, before)
+        self.assertIsNone(self.tracer._root)
+
+    def test_graph_failure_flushes_and_removes_filter_without_tracing(self):
+        error = RuntimeError('graph failed')
+        self.builder.side_effect = error
+        before = list(self.obs.logger.filters)
+        with self.assertRaises(RuntimeError) as caught:
+            ao.run_test_scenarios()
+        self.assertIs(caught.exception, error)
+        self.flush.assert_called_once_with()
+        self.client.put_trace_segments.assert_not_called()
+        self.assertEqual(self.obs.logger.filters, before)
+
+    def test_tool_arguments_redacted_but_inputs_names_and_timings_preserved(self):
+        canary = 'private-customer@example.invalid'
+        received = []
+        @self.obs._traced
+        def capture_argument(customer_id):
+            received.append(customer_id)
+            return 'safe result'
+        self.agent.side_effect = lambda prompt: capture_argument(customer_id=canary)
+        before = list(self.obs.logger.filters)
+        with self.assertLogs(self.obs.logger, level='INFO') as logs:
+            ao.run_test_scenarios()
+        self.assertEqual(received, [canary] * 3)
+        text = '\n'.join(logs.output)
+        self.assertNotIn(canary, text)
+        self.assertNotIn(canary, json.dumps(self.documents()))
+        self.assertIn('tool call  capture_argument [arguments redacted]', text)
+        self.assertRegex(text, r'tool done  capture_argument \(\d+\.\d+s\)')
+        self.assertEqual(self.obs.logger.filters, before)
+
+    def test_disabled_tracing_never_reports_stale_publication(self):
+        self.tracer.last_trace_id = 'stale-id'
+        self.tracer.last_published = True
+        with patch.dict(os.environ, AGENT_TRACING_ENABLED='false'):
+            ao.run_test_scenarios()
+        self.client.put_trace_segments.assert_not_called()
+        self.assertNotIn('stale-id', self.output.getvalue())
+        self.assertEqual(self.output.getvalue().count('Publication: DISABLED'), 3)
+        self.assertEqual(self.agent.call_count, 3)
+        self.flush.assert_called_once_with()
+
+    def test_failed_or_rejected_publication_does_not_claim_workflow_failure(self):
+        for rejected in [False, True]:
+            with self.subTest(rejected=rejected):
+                self.client.reset_mock()
+                self.output.seek(0)
+                self.output.truncate()
+                self.client.put_trace_segments.side_effect = None if rejected else RuntimeError('telemetry unavailable')
+                self.client.put_trace_segments.return_value = {'UnprocessedTraceSegments': [{'ErrorCode': 'InvalidRequest'}]} if rejected else {}
+                with self.assertLogs(self.obs.logger, level='WARNING'):
+                    ao.run_test_scenarios()
+                self.assertEqual(self.output.getvalue().count('Workflow: COMPLETED'), 3)
+                self.assertEqual(self.output.getvalue().count('Publication: NOT_PUBLISHED'), 3)
+
+    def test_unsampled_traces_are_not_reported_as_published(self):
+        with patch.dict(os.environ, AGENT_TRACE_SAMPLING_RATE='0'):
+            ao.run_test_scenarios()
+        self.client.put_trace_segments.assert_not_called()
+        self.assertEqual(self.output.getvalue().count('Publication: NOT_PUBLISHED'), 3)
+        self.flush.assert_called_once_with()
+
+
 def main():
     global config, ao, cli
     from botocore.endpoint import Endpoint
@@ -425,6 +604,7 @@ def main():
         program = unittest.main(exit=False)
         # Also catch network attempts swallowed by best-effort instrumentation.
         network_send.assert_not_called()
+        print('AWS transport guard: PASS (0 real AWS requests)')
         raise SystemExit(0 if program.result.wasSuccessful() else 1)
 
 

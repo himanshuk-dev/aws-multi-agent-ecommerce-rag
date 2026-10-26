@@ -2088,24 +2088,32 @@ def run_serve() -> None:
     app.run()
 
 
-if __name__ == '__main__':
-    command = sys.argv[1] if len(sys.argv) > 1 else ''
-    if not command and os.path.exists(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), agentcore_cli.RUNTIME_MARKER
-    )):
-        command = 'serve'
+class _RedactTestToolArguments(logging.Filter):
+    """Hide tool argument values only while the local scenario runner is active."""
 
-    if command == 'serve':
-        run_serve()
+    def filter(self, record):
+        if (record.name == 'novamart.observability'
+                and record.msg == "tool call  %s %s"
+                and isinstance(record.args, tuple) and len(record.args) == 2):
+            record.args = (record.args[0], '[arguments redacted]')
+        return True
 
-    elif command == 'deploy':
-        deploy_all()
 
-    elif len(sys.argv) > 1 and sys.argv[1] == 'test':
+def run_test_scenarios() -> None:
+    """Run the existing local scenarios with one correlated root trace each.
+
+    This is a live command: models, workflow writes and telemetry use AWS.
+    Completion means the orchestrator returned, not that every tool succeeded.
+    """
+    observability_logger = logging.getLogger('novamart.observability')
+    argument_filter = _RedactTestToolArguments()
+    observability_logger.addFilter(argument_filter)
+    try:
         print("Running local agent test...")
-        inventory_agent     = build_inventory_agent()
-        refund_agent        = build_refund_agent()
-        policy_agent        = build_policy_agent()
+        setup_logging(to_cloudwatch=True)
+        inventory_agent = build_inventory_agent()
+        refund_agent = build_refund_agent()
+        policy_agent = build_policy_agent()
         communication_agent = build_communication_agent()
         orchestrator = build_orchestrator_agent(
             inventory_agent, refund_agent, policy_agent, communication_agent
@@ -2122,14 +2130,58 @@ if __name__ == '__main__':
             ("CUST-002", "What is the return policy for premium customers?"),
             ("CUST-003", "How much would 5 items at $29.99 be with a 10% discount?"),
         ]
-        for customer_id, query in test_cases:
+        for number, (customer_id, query) in enumerate(test_cases, 1):
             session_id = str(uuid.uuid4())[:8]
             print(f"\n{'─'*60}")
-            print(f"Session: {session_id} | Customer: {customer_id}")
+            print(f"Scenario: {number} | Session: {session_id}")
             print(f"Query: {query}")
             prompt = f"[Session ID: {session_id}] [Customer ID: {customer_id}] {query}"
-            response = orchestrator(prompt)
-            print(f"Response: {response}")
+            trace_id = None
+            completed = False
+            try:
+                with tracer.trace_request(
+                    session_id=session_id, customer_id="redacted", request="",
+                ) as root:
+                    # A disabled/nested context creates no root. Never reuse a
+                    # previous request's id or publication flag in that case.
+                    if root is not None:
+                        trace_id = tracer.last_trace_id
+                    response = orchestrator(prompt)
+                    completed = True
+                print(f"Response: {response}")
+            finally:
+                if trace_id is None:
+                    publication = 'DISABLED' if not tracer.enabled else 'NOT_STARTED'
+                elif tracer.last_trace_id == trace_id and tracer.last_published:
+                    publication = 'PUBLISHED'
+                else:
+                    publication = 'NOT_PUBLISHED'
+                workflow = 'COMPLETED' if completed else 'FAILED'
+                print(f"Scenario: {number} | Session: {session_id} | "
+                      f"Workflow: {workflow} | Trace: {trace_id or 'none'} | "
+                      f"Publication: {publication}")
+    finally:
+        try:
+            flush_logs()
+        finally:
+            observability_logger.removeFilter(argument_filter)
+
+
+if __name__ == '__main__':
+    command = sys.argv[1] if len(sys.argv) > 1 else ''
+    if not command and os.path.exists(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), agentcore_cli.RUNTIME_MARKER
+    )):
+        command = 'serve'
+
+    if command == 'serve':
+        run_serve()
+
+    elif command == 'deploy':
+        deploy_all()
+
+    elif len(sys.argv) > 1 and sys.argv[1] == 'test':
+        run_test_scenarios()
 
     elif len(sys.argv) > 1 and sys.argv[1] == 'chat':
         # ── Interactive terminal chat - educational mode ───────────────────
