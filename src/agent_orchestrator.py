@@ -1165,7 +1165,6 @@ def build_orchestrator_agent(
             logger.exception("Policy Agent routing failed")
             return "Error: Unable to retrieve or save policy findings."
 
-    # TODO: Implement route_to_refund_agent
     @tool
     def route_to_refund_agent(session_id: str, customer_id: str, request: str) -> str:
         """
@@ -1229,7 +1228,6 @@ def build_orchestrator_agent(
             logger.exception("Refund Agent routing failed")
             return "Error: Unable to evaluate or save refund findings."
 
-    # TODO: Implement route_to_communication_agent
     @tool
     def route_to_communication_agent(session_id: str, customer_id: str,
                                      original_request: str) -> str:
