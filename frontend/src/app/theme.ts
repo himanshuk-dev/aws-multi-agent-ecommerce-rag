@@ -17,8 +17,14 @@ export const theme = createTheme({
   },
   shape: { borderRadius: 16 },
   components: {
-    MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { borderRadius: 12, padding: '11px 20px' } } },
-    MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { outlined: { borderColor: '#e4e8df' } } },
+    MuiButton: {
+      defaultProps: { disableElevation: true },
+      styleOverrides: { root: { borderRadius: 12, padding: '11px 20px' } },
+    },
+    MuiPaper: {
+      defaultProps: { elevation: 0 },
+      styleOverrides: { outlined: { borderColor: '#e4e8df' } },
+    },
     MuiChip: { styleOverrides: { root: { fontWeight: 600 } } },
     MuiOutlinedInput: { styleOverrides: { root: { background: '#fff', borderRadius: 12 } } },
   },

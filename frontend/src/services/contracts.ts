@@ -5,7 +5,11 @@ export interface Customer {
   email: string;
   tier: 'Premium' | 'Standard';
 }
-export interface OrderEvent { label: string; date: string; complete: boolean }
+export interface OrderEvent {
+  label: string;
+  date: string;
+  complete: boolean;
+}
 export interface Order {
   id: string;
   product: string;
@@ -19,7 +23,10 @@ export interface Order {
   destination: string;
   events: OrderEvent[];
 }
-export interface ChatReply { reply: string; sessionId: string }
+export interface ChatReply {
+  reply: string;
+  sessionId: string;
+}
 export interface PortalService {
   currentCustomer(signal?: AbortSignal): Promise<Customer>;
   login(email: string, password: string): Promise<Customer>;
