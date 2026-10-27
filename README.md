@@ -6,6 +6,10 @@ This educational implementation was developed for **Udacity's AWS Agent Engineer
 
 **Final verification: official Udacity suite 120/120 points; offline regression suite 28/28 tests.** Offline testing made zero AWS transport attempts. All 77 original assertion sites were preserved, with five new assertions added. The repository includes the [official-suite result](screenshots/10_full_test_suite_120_pass.png) and an [earlier AWS X-Ray Service Map](screenshots/11_xray_service_map.png). These are recorded evidence, not a guarantee that the AWS lab remains available.
 
+## Local customer portal (post-submission extension)
+
+The [React + Material UI customer portal](frontend/README.md) runs entirely locally with demo login, fictional order tracking, and scripted support chat. It creates and calls no AWS resources and does not alter the submitted Python agent. See its README for setup, architecture, and the boundary for a future live integration.
+
 ## Key Features
 
 - **Specialist delegation:** a Claude Haiku 4.5 orchestrator coordinates Claude Sonnet 4.5 workers and delegates the final reply to the Communication Agent.
