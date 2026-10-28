@@ -37,17 +37,17 @@ const faqs = [
   {
     question: 'What does Premium membership include?',
     answer:
-      'The project’s Premium return window is 60 days, compared with 30 days for Standard members. Actual eligibility and other benefits require verified policy and order information. This account and its membership are fictional.',
+      'The project’s Premium return window is 60 days, compared with 30 days for Standard members. Actual eligibility and other benefits require verified policy and order information. Ask the deployed agent to verify your membership and applicable policy.',
   },
   {
     question: 'How do I track my order?',
     answer:
-      'Choose Track order to see the sample delivery timeline, or ask Nova about the demo order number. These timelines are fixed fictional examples, not real carrier updates.',
+      'Choose an order to see its recorded details, or ask Nova about the order number. Carrier event history is not recorded in the project Orders table; dates may be estimates.',
   },
   {
     question: 'Can I create a return here?',
     answer:
-      'No. This local demo explains return windows but cannot initiate a return, change an order, or issue a refund. The original project’s return tool validates requests without executing payments.',
+      'The project agent can evaluate a return request using its existing tools and policies. The current return tool validates requests without processing payments.',
   },
 ];
 export function Dashboard() {
@@ -55,7 +55,7 @@ export function Dashboard() {
     window.scrollTo(0, 0);
   }, []);
   const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
-  const { customer, error: authError } = useAuth();
+  const { customer, error: authError, mode } = useAuth();
   const { orders, loading, error, reload } = useOrders();
   const [view, setView] = useState<PortalView>('overview');
   const [query, setQuery] = useState('');
@@ -77,7 +77,9 @@ export function Dashboard() {
           `${order.id} ${order.product}`.toLowerCase().includes(query.toLowerCase().trim()),
         )
       : orders;
-  const inTransit = orders.filter((order) => order.status === 'in_transit').length;
+  const inTransit = orders.filter(
+    (order) => order.status === 'in_transit' || order.status === 'shipped',
+  ).length;
   const delivered = orders.filter((order) => order.status === 'delivered').length;
   return (
     <AppShell view={view} onNavigate={setView}>
@@ -179,7 +181,13 @@ export function Dashboard() {
                       '&:hover': { bgcolor: '#c7dda4' },
                     }}
                     endIcon={<ArrowForward sx={{ fontSize: 16 }} />}
-                    onClick={() => ask('Where is my order DEMO-1042?')}
+                    onClick={() =>
+                      ask(
+                        mode === 'demo'
+                          ? 'Where is my order DEMO-1042?'
+                          : 'Please show my orders and their current status.',
+                      )
+                    }
                   >
                     Ask Nova about an order
                   </Button>
@@ -340,8 +348,9 @@ export function Dashboard() {
           <Stack direction="row" spacing={1} sx={{ px: 1, alignItems: 'flex-start' }}>
             <ShieldOutlined sx={{ fontSize: 17, color: '#899681', mt: 0.2 }} />
             <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.7 }}>
-              You’re exploring a local portfolio demo. Orders and delivery dates are fictional. No
-              AWS services are called, and no orders or refunds are changed.
+              {mode === 'demo'
+                ? 'You’re exploring a local portfolio demo. Orders and delivery dates are fictional. No AWS services are called, and no orders or refunds are changed.'
+                : 'Connected to your deployed NovaMart agent. Orders are read from the project database. Chat invokes AWS models and may write workflow state. Carrier history and conversation recall are not integrated.'}
             </Typography>
           </Stack>
         </Stack>

@@ -27,7 +27,7 @@ import { Brand } from '../../components/Brand';
 import { useAuth } from './AuthProvider';
 
 export function LoginPage() {
-  const { login, error } = useAuth();
+  const { login, error, mode } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
@@ -142,7 +142,7 @@ export function LoginPage() {
           variant="caption"
           sx={{ display: { xs: 'none', md: 'block' }, color: '#b6cbbf', zIndex: 1 }}
         >
-          NovaMart customer care · Local portfolio demo
+          NovaMart customer care · {mode === 'demo' ? 'Local demo' : 'Project AgentCore Runtime'}
         </Typography>
         <Box
           aria-hidden
@@ -233,32 +233,41 @@ export function LoginPage() {
             sx={{ my: 2.5, color: 'text.secondary', justifyContent: 'center' }}
           >
             <LockOutlined sx={{ fontSize: 15 }} />
-            <Typography variant="caption">Local session · credentials never sent to AWS</Typography>
+            <Typography variant="caption">
+              Local login · AWS credentials stay on the server
+            </Typography>
           </Stack>
-          <Divider sx={{ my: 3 }} />
-          <Paper variant="outlined" sx={{ p: 2.5, bgcolor: '#fafbf6' }}>
-            <Typography sx={{ fontWeight: 650 }} variant="body2">
-              Just exploring? Try the demo.
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Use fictional orders and a scripted assistant. No real customer data, AI inference, or
-              AWS calls.
-            </Typography>
-            <Typography variant="caption" component="p" sx={{ mt: 1.5, fontFamily: 'monospace' }}>
-              demo@novamart.local · NovaMartDemo!
-            </Typography>
-            <Button
-              size="small"
-              onClick={() => {
-                setEmail('demo@novamart.local');
-                setPassword('NovaMartDemo!');
-              }}
-              disabled={busy}
-              sx={{ mt: 1, px: 0 }}
-            >
-              Fill demo credentials <ArrowForward sx={{ fontSize: 16, ml: 1 }} />
-            </Button>
-          </Paper>
+          {mode === 'demo' && <Divider sx={{ my: 3 }} />}
+          {mode === 'demo' ? (
+            <Paper variant="outlined" sx={{ p: 2.5, bgcolor: '#fafbf6' }}>
+              <Typography sx={{ fontWeight: 650 }} variant="body2">
+                Just exploring? Try the demo.
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Use fictional orders and a scripted assistant. No real customer data, AI inference,
+                or AWS calls.
+              </Typography>
+              <Typography variant="caption" component="p" sx={{ mt: 1.5, fontFamily: 'monospace' }}>
+                demo@novamart.local · NovaMartDemo!
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => {
+                  setEmail('demo@novamart.local');
+                  setPassword('NovaMartDemo!');
+                }}
+                disabled={busy}
+                sx={{ mt: 1, px: 0 }}
+              >
+                Fill demo credentials <ArrowForward sx={{ fontSize: 16, ml: 1 }} />
+              </Button>
+            </Paper>
+          ) : (
+            <Alert severity="info">
+              Sign in with your private local portal account. Customer identity is mapped on the
+              server. Responses come from your deployed project agent.
+            </Alert>
+          )}
         </Box>
       </Container>
     </Box>

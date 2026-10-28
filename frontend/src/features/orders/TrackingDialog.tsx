@@ -12,9 +12,10 @@ import {
   StepLabel,
   Stepper,
   Typography,
+  Alert,
 } from '@mui/material';
 import type { Order } from '../../services/contracts';
-import { ProductArt, formatDate, statusLabels } from './OrderCard';
+import { ProductArt, formatDate, statusLabels, deliveryLabel } from './OrderCard';
 export function TrackingDialog({
   order,
   onClose,
@@ -57,12 +58,17 @@ export function TrackingDialog({
               <Box>
                 <Typography sx={{ fontWeight: 650 }}>{order.product}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {order.status === 'delivered' ? 'Delivered' : 'Estimated arrival'}{' '}
-                  {formatDate(order.deliveryDate)}
+                  {deliveryLabel(order)} {formatDate(order.deliveryDate)}
                 </Typography>
               </Box>
             </Stack>
             <Divider sx={{ my: 3 }} />
+            {!order.events.length && (
+              <Alert severity="info">
+                Carrier event history is not available in the project database. Ask the agent about
+                the recorded order status.
+              </Alert>
+            )}
             <Stepper
               orientation="vertical"
               activeStep={order.events.filter((event) => event.complete).length - 1}
@@ -77,16 +83,16 @@ export function TrackingDialog({
             </Stepper>
             <Box sx={{ mt: 3, p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
               <Typography variant="caption" color="text.secondary">
-                DEMO TRACKING REFERENCE
+                TRACKING REFERENCE
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {order.trackingNumber}
+                {order.trackingNumber ?? 'Not recorded'}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Destination: {order.destination}
+                Destination: {order.destination ?? 'Not recorded'}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Fictional timeline; no carrier or AWS lookup.
+                Order details are not a live carrier tracking feed.
               </Typography>
             </Box>
           </DialogContent>

@@ -6,15 +6,16 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
-const greeting = (): Message => ({
+const greeting = (demo: boolean): Message => ({
   id: crypto.randomUUID(),
   role: 'assistant',
-  content:
-    'Hi, I’m Nova, your demo shopping assistant. I can walk you through your sample orders or explain the project’s return windows. What can I help with?',
+  content: demo
+    ? 'Hi, I’m Nova, your demo shopping assistant. I can walk you through your sample orders or explain the project’s return windows. What can I help with?'
+    : 'Welcome to NovaMart support. Send a message to your project’s deployed agent to ask about an order, shipping, returns, or warranties.',
 });
 export function useChat() {
-  const { service, expire } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([greeting()]);
+  const { service, expire, mode } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([greeting(mode === 'demo')]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const sessionId = useRef(crypto.randomUUID());
@@ -57,7 +58,7 @@ export function useChat() {
   const reset = () => {
     if (inFlight.current) return;
     sessionId.current = crypto.randomUUID();
-    setMessages([greeting()]);
+    setMessages([greeting(mode === 'demo')]);
     setError('');
   };
   return { messages, busy, error, send, reset };

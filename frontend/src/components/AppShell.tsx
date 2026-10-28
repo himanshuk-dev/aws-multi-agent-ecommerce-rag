@@ -35,7 +35,7 @@ export function AppShell({
   onNavigate(view: PortalView): void;
   children: ReactNode;
 }) {
-  const { customer, logout } = useAuth();
+  const { customer, logout, mode } = useAuth();
   return (
     <Box sx={{ display: 'flex', minHeight: '100dvh', flexDirection: { xs: 'column', md: 'row' } }}>
       <Box
@@ -122,7 +122,7 @@ export function AppShell({
               component="p"
               sx={{ mt: 1, lineHeight: 1.7 }}
             >
-              Your Premium membership comes with a little more care.
+              Get help with your orders and membership.
             </Typography>
             <Button
               size="small"
@@ -138,7 +138,11 @@ export function AppShell({
             <Avatar
               sx={{ width: 34, height: 34, bgcolor: '#e8e2d7', color: '#6a6253', fontSize: 13 }}
             >
-              AM
+              {customer?.name
+                .split(' ')
+                .slice(0, 2)
+                .map((part) => part[0])
+                .join('')}
             </Avatar>
             <Box sx={{ flex: 1 }}>
               <Typography sx={{ fontSize: 12, fontWeight: 650 }}>{customer?.name}</Typography>
@@ -181,7 +185,7 @@ export function AppShell({
             </Box>
           </Typography>
           <Chip
-            label="LOCAL DEMO"
+            label={mode === 'demo' ? 'LOCAL DEMO' : 'LIVE AGENT'}
             size="small"
             variant="outlined"
             sx={{ fontSize: 9, letterSpacing: 1.1, height: 23, bgcolor: '#fff' }}

@@ -33,6 +33,7 @@ const orders: Order[] = [
 ];
 function service(overrides: Partial<PortalService> = {}): PortalService {
   return {
+    info: vi.fn().mockResolvedValue({ mode: 'demo' }),
     currentCustomer: vi.fn().mockRejectedValue(new ApiError('Sign in', 401)),
     login: vi.fn().mockResolvedValue(customer),
     logout: vi.fn().mockResolvedValue(undefined),
@@ -56,6 +57,58 @@ async function signIn(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 describe('customer portal', () => {
+  it('live mode hides public demo login and displays agent errors without fictional replies', async () => {
+    const user = userEvent.setup();
+    const api = service({
+      info: vi.fn().mockResolvedValue({ mode: 'agentcore' }),
+      chat: vi
+        .fn()
+        .mockRejectedValue(new ApiError('The agent could not complete this request.', 502)),
+    });
+    mount(api);
+    await screen.findByRole('heading', { name: 'Welcome back.' });
+    expect(screen.queryByRole('button', { name: /Fill demo credentials/ })).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Email address' }), 'owner@example.com');
+    await user.type(screen.getByLabelText(/^Password/, { selector: 'input' }), 'private-password');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByText('LIVE AGENT');
+    expect(screen.queryByText('Local demo assistant')).not.toBeInTheDocument();
+    const composer = await screen.findByRole('textbox', { name: 'Message Nova' });
+    await user.type(composer, 'What is the return policy?');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    await screen.findByText('The agent could not complete this request.');
+    expect(composer).toHaveValue('What is the return policy?');
+    expect(screen.queryByText('Your demo order is on the way.')).not.toBeInTheDocument();
+  });
+  it('live order details tolerate missing fields without inventing delivery history', async () => {
+    const user = userEvent.setup();
+    mount(
+      service({
+        info: vi.fn().mockResolvedValue({ mode: 'agentcore' }),
+        currentCustomer: vi.fn().mockResolvedValue(customer),
+        orders: vi.fn().mockResolvedValue([
+          {
+            ...orders[0],
+            status: 'unknown',
+            price: null,
+            quantity: null,
+            deliveryDate: null,
+            deliveryDateKind: 'estimated',
+            placedAt: null,
+            events: [],
+            destination: null,
+            trackingNumber: null,
+          },
+        ]),
+      }),
+    );
+    await user.click(await screen.findByRole('button', { name: 'View details' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Carrier event history is not available/)).toBeInTheDocument();
+    expect(within(dialog).queryByText('Vancouver, BC')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Not recorded', { exact: true })).toBeInTheDocument();
+  });
+
   it('opens in StrictMode even when browser scrolling returns a Promise', async () => {
     vi.spyOn(window, 'scrollTo').mockImplementation(() => Promise.resolve());
     const api = service({ currentCustomer: vi.fn().mockResolvedValue(customer) });

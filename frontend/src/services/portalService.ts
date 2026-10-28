@@ -21,6 +21,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 /** Cookie-authenticated API adapter. No AWS configuration or keys enter the browser. */
 export const portalService: PortalService = {
+  info: (signal) => request<{ mode: 'demo' | 'agentcore' }>('/config', { signal }),
   currentCustomer: (signal) => request<Customer>('/me', { signal }),
   login: (email, password) =>
     request<Customer>('/login', { method: 'POST', body: JSON.stringify({ email, password }) }),

@@ -1,118 +1,118 @@
 # NovaMart customer portal
 
-A local React + TypeScript + Material UI extension of the submitted NovaMart agent project. Sign in, browse and search orders, open shipment timelines, and ask Nova about an order in a responsive customer-care workspace.
+React + TypeScript + Material UI customer care for the existing NovaMart project. The UI runs locally. In the default **AgentCore mode**, its local Node backend calls the project's deployed AgentCore Runtime through the existing Python `invoke_agent()` adapter. Customer and order records come from the project's DynamoDB tables. No AWS services are created or deployed by the frontend.
 
-**This version is a local demonstration.** It does not call the deployed AgentCore Runtime, Bedrock, Cognito, DynamoDB, or any AWS API. Nova uses scripted responses over explicitly fictional `DEMO-*` orders, not live model inference. It cannot create returns, issue refunds, or change an AWS order. Fixed October 2026 delivery dates are sample timelines, not current delivery promises.
+## Start with the real project agent
 
-## Preview
+Prerequisites: Node.js 22.12+, the project's Python virtual environment and dependencies, valid local AWS credentials for the existing deployment, and the populated root `.env` containing its deployment identifiers. No AWS keys enter the browser.
 
-![NovaMart desktop customer portal](docs/portal-overview.jpg)
-
-[Mobile portal preview](docs/portal-mobile.jpg) · Captured from the local fictional demo.
-
-## Run locally
-
-Use Node.js 22.12+ (tested with Node 24.6) and npm. From the repository root:
+From the repository root:
 
 ```bash
 cd frontend
 npm ci
-```
-
-Start the local API in one terminal:
-
-```bash
+npm run setup:account -- owner@novamart.local CUST-001
 npm run api
 ```
 
-Start the frontend in a second terminal:
+`setup:account` creates two **gitignored, owner-readable local files** without calling AWS:
+
+- `.portal.env`: local login email, server-authorized customer ID, and salted scrypt password hash.
+- `.portal-password`: generated password to read locally and use for login. Never commit or share it.
+
+The email is a local login name, not a Cognito account or email verification. Choose an existing project customer that you are authorized to access. The setup command refuses to overwrite existing account files. This is a single-owner local development portal, not production customer authentication.
+
+In another terminal:
 
 ```bash
+cd frontend
 npm run dev -- --strictPort
 ```
 
-Open **http://127.0.0.1:5173**. The API binds to **127.0.0.1:3001**. Vite proxies `/api` to that loopback address. Keep port 5173, or explicitly update the API's allowed origins when changing the frontend port.
+Open **http://127.0.0.1:5173**, sign in using the configured login name and generated password, and check for the **LIVE AGENT** badge. Login reads the mapped customer from DynamoDB; invalid/expired AWS credentials or a nonexistent customer cause an explicit error instead of showing sample data.
 
-Use **Fill demo credentials** on the login screen, then **Sign in**:
+If the old demo API is still running on port 3001, stop it with Ctrl+C in its terminal before starting `npm run api`. Starting an additional process does not replace the old one. The Vite app automatically obtains the backend mode from `/api/config`.
 
-- Email: `demo@novamart.local`
-- Password: `NovaMartDemo!`
+The API binds to **127.0.0.1:3001**; Vite proxies `/api` to it. Keep frontend port 5173, or update the backend's allowed origins explicitly. By default, the bridge uses the repository's `.venv/bin/python`; set `PORTAL_PYTHON` server-side if the virtual environment is elsewhere. The Python process loads the existing root project configuration and uses the normal local AWS SDK credential chain.
 
-These are public demonstration credentials, not AWS credentials or a real customer account. No `.env` is needed. The root project's `.env` is not imported or copied into the frontend bundle. Never put AWS secrets into `VITE_*` variables: those values become public browser code.
+## Request flow
 
-## Explore
+1. Login validates the private local credential, then loads the server-mapped project customer.
+2. The API issues a random HttpOnly, SameSite=Strict cookie with 30-minute expiry.
+3. `/api/orders` queries only the configured customer partition in DynamoDB, including pagination.
+4. `/api/chat` sends the message and a server-scoped conversation ID to `src/portal_bridge.py`.
+5. The bridge calls **the existing `src/agent_orchestrator.py::invoke_agent()`**, which invokes your deployed AgentCore Runtime and its existing multi-agent workflow.
+6. The bridge returns the runtime's `result` as chat text. Failed invocations return an error; there is **no fallback to scripted answers**.
 
-1. Sign in and choose **Track order** on the headphones card.
-2. Review the fictional timeline, then choose **Ask Nova about this order**.
-3. The question is placed in the chat composer for review; press Send to submit it.
-4. Open **My orders** to search by product or order number.
-5. Open **Help & support** for project return-window information and demo limitations.
-6. Start a new conversation or sign out to clear the visible chat.
+The server ignores browser-supplied customer IDs. Conversation IDs are additionally scoped to the login so another login cannot select the same WorkflowState by reusing a browser conversation ID. Concurrent turns for one conversation are rejected while an invocation is running.
 
-The frontend handles loading, empty order results, failed sign-in, expired sessions, API errors, chat retries, duplicate-send prevention, and reduced-motion preferences. Chat displays plain text rather than interpreting model or customer text as HTML.
+Live requests use AWS inference and can write the agent's DynamoDB WorkflowState. Responses and routing are determined by your existing deployed agent, prompts, tools, guardrails, and policies. These are unchanged. The portal does not implement payments, refunds, conversation recall, or new carrier integrations. A stable session ID does not add conversational recall that the original agent lacks. Failed/aborted HTTP requests can still have reached AWS; retrying is not a rollback.
 
-## Structure and design decisions
+Order cards display recorded values only. The table's `estimated_delivery` is labeled an estimate, not an actual delivery timestamp. Missing fields show **Not recorded**. No shipment events, addresses, or delivery history are fabricated: the project table does not contain a carrier event timeline.
 
-```text
-src/
-  app/                 # Composition root, theme, responsive dashboard, error boundary
-  components/          # Shared brand and application shell
-  features/
-    auth/              # Authentication context, login view
-    orders/            # Order query hook, reusable cards, tracking dialog
-    chat/              # Conversation hook and chat view
-  services/
-    contracts.ts       # Customer, Order, PortalService contracts
-    portalService.ts   # Same-origin HTTP adapter
-server/
-  app.mjs              # Loopback API, session authentication, validation
-  data.mjs             # Fictional records and scripted assistant behavior
-  index.mjs            # Process entry point
-  app.test.mjs         # HTTP authorization and validation tests
-```
-
-The feature folders keep customer workflows separate. Hooks own asynchronous feature state; components render it. `PortalService` is the application port: the HTTP adapter implements it, and tests inject a fake service through `AuthProvider`. This keeps transport and AWS details out of the views. Shared Material UI theme tokens control colors, typography, and component styling. The authenticated dashboard is loaded lazily.
-
-The local API derives its demo identity from its server-side session. It does not trust a customer ID sent by the browser. Session IDs are opaque random values carried in HttpOnly, SameSite=Strict cookies, with 30-minute expiry and invalidation on sign-out. The server rejects unapproved browser origins, limits request sizes and login attempts, validates chat payloads, and bounds demo conversations. No authentication tokens or conversations are saved in localStorage. Visible chat is discarded on reload or sign-out. All server sessions disappear when the API restarts.
-
-This intentionally small in-memory server is **not production authentication**: it has one shared public account, no real identity verification, no registration/recovery, and no durable customer data. Its cookie omits `Secure` only because the loopback demo uses HTTP. Do not expose either development server publicly or use these credentials/session settings for real customers.
-
-## HTTP contract
-
-| Route | Purpose |
-|---|---|
-| `POST /api/login` | Accept `{email, password}`, issue a local session cookie, return `Customer`. |
-| `GET /api/me` | Return the authenticated customer; 401 when absent/expired. |
-| `POST /api/logout` | Invalidate the session and expire the cookie. |
-| `GET /api/orders` | Return orders belonging to the server-derived demo identity. |
-| `POST /api/chat` | Accept `{message, sessionId}`, return `{reply, sessionId}`. |
-
-Errors use `{error: string}` with an appropriate non-2xx status. Chat messages are limited to 2,000 characters. The browser session ID groups conversation turns; it is not an authorization credential. The server session remains the authorization boundary.
-
-A future real-agent connection belongs behind this API boundary. It must authenticate real users, map the trusted identity to an authorized customer on the server, enforce order and session ownership, and keep any AWS SDK credentials server-side. Replace the demo handlers and fixtures; preserve `PortalService` so the UI stays unchanged. No such live integration or AWS infrastructure is provisioned by this frontend.
-
-## Verification
+## Optional offline demo
 
 ```bash
-npm test                 # UI workflows with an injected fake service; no network
-npm run test:api          # Local HTTP tests; binds ephemeral loopback ports
-npm run build             # TypeScript checks and production bundle
-npm run format:check      # Formatting consistency
-npm audit                 # Dependency vulnerability report (requires registry access)
+npm run api:demo
 ```
 
-`npm run preview` serves the static production build; it does not supply the API proxy or a production backend. Use the development commands above for the full local demo. Hosting the build later requires a same-origin backend/reverse proxy for `/api`, HTTPS, and production identity and authorization controls.
+This explicitly selects the old scripted provider, uses fictional `DEMO-*` records, and makes no AWS calls. It shows **LOCAL DEMO** and exposes **Fill demo credentials** (`demo@novamart.local` / `NovaMartDemo!`). Those public credentials are rejected by the live provider. Run only one API mode at a time.
 
-The original Python agent code and AWS deployment configuration are independent of this extension. Its official AWS-backed suite is not needed to run this local frontend.
+These earlier previews show **demo mode**, not proof of live inference:
 
-## Verified results
+![NovaMart demo desktop layout](docs/portal-overview.jpg)
 
-- UI regression tests: **7 passed**.
-- Loopback API tests: **6 passed**.
-- TypeScript and production build: **passed**.
-- Formatting and `git diff --check`: **passed**.
-- Dependency audit: **0 reported vulnerabilities** at verification time.
-- Existing Python offline suite: **37 passed**, with its AWS transport guard reporting **0 real AWS requests**.
-- Browser checks: desktop tracking and chat, demo login/sign-out, mobile order filtering, and a 390px viewport with no horizontal overflow.
+[Demo mobile layout](docs/portal-mobile.jpg)
 
-The official AWS-backed suite and live agent were not run for this frontend extension.
+## Structure
+
+```text
+frontend/src/
+  app/                     # Composition root, shared theme, dashboard, error boundary
+  components/              # Brand and responsive navigation
+  features/auth/           # Authentication context and login
+  features/orders/         # Query hook, order cards, recorded tracking details
+  features/chat/           # Conversation state and chat presentation
+  services/                # PortalService contracts and same-origin HTTP adapter
+frontend/server/
+  app.mjs                  # Cookie sessions, request validation, provider injection
+  project-provider.mjs     # Live provider and bounded Python subprocess adapter
+  data.mjs                 # Optional scripted demo provider data
+  setup-account.mjs        # Private local account generation (no AWS calls)
+src/portal_bridge.py        # Server-only project Runtime and DynamoDB adapter
+```
+
+Views depend on feature hooks and the typed `PortalService` contract. The HTTP adapter implements that port; tests inject fakes. The local server separately accepts a provider, so live and demo behavior remain explicit. Existing Python agent code is reused without changing its business logic. The dashboard is loaded lazily, and all user/model text renders as plain text rather than HTML.
+
+## Security boundary
+
+This is loopback-only, single-owner development software. It is not a production multi-customer authorization system. The existing agent's tools accept customer identifiers generated by the model; mapping identity in the portal prevents request-field forgery but does not turn model prompts into an authorization boundary. Before making it publicly accessible, enforce trusted customer/order authorization inside the agent's data tools, adopt production authentication, HTTPS and Secure cookies, durable session storage, and appropriate privacy controls. Do not expose the development servers publicly.
+
+The root project `.env` stays server-side and is not copied into the browser bundle. Never put AWS secrets or the local password/hash into `VITE_*` variables. The bridge captures SDK output privately and returns generic errors instead of exposing credentials or raw AWS exceptions. Its subprocess has a bounded timeout and response-size limit. No automatic portal-level retry is performed.
+
+## Checks
+
+```bash
+npm test                         # UI tests with injected services; no AWS
+npm run test:api                  # Loopback API/provider tests with mocked bridge
+npm run build                    # TypeScript validation and production bundle
+npm run format:check
+# From the repository root:
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python tests/test_portal_bridge_offline.py
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python tests/test_compatibility_offline.py
+```
+
+These offline checks establish the integration contract, not successful delivery of a live model response. No deployment, resource creation, or live model invocation is part of the test commands. Run an authorized request through the UI after starting the live backend to verify your current AWS deployment end to end.
+
+`npm run preview` serves the static production bundle only and has no API proxy. Use the development commands above for the local portal. Hosting the built app requires a same-origin API/reverse proxy and production security controls.
+
+## Latest offline verification
+
+- UI tests: **9 passed**.
+- Node API/provider/subprocess tests: **12 passed**.
+- Python bridge tests: **6 passed**, with **0 AWS transport attempts**.
+- Existing Python compatibility suite: **37 passed**, with **0 real AWS requests**.
+- TypeScript/production build, formatting, Python syntax, and `git diff --check`: passed.
+- Local `/api/config` confirms **agentcore** mode.
+
+A live response has not yet been verified: the AWS authentication check returned **ExpiredToken**. Refresh local lab credentials before signing in or testing the deployed agent. The demo previews above are not live-inference evidence.

@@ -3,7 +3,7 @@ export interface Customer {
   id: string;
   name: string;
   email: string;
-  tier: 'Premium' | 'Standard';
+  tier: string;
 }
 export interface OrderEvent {
   label: string;
@@ -14,13 +14,21 @@ export interface Order {
   id: string;
   product: string;
   category: string;
-  quantity: number;
-  price: number;
-  status: 'in_transit' | 'delivered' | 'return_requested';
-  placedAt: string;
-  deliveryDate: string;
-  trackingNumber: string;
-  destination: string;
+  quantity: number | null;
+  price: number | null;
+  status:
+    | 'in_transit'
+    | 'delivered'
+    | 'return_requested'
+    | 'processing'
+    | 'shipped'
+    | 'cancelled'
+    | 'unknown';
+  placedAt: string | null;
+  deliveryDate: string | null;
+  deliveryDateKind?: 'estimated' | 'delivered';
+  trackingNumber: string | null;
+  destination: string | null;
   events: OrderEvent[];
 }
 export interface ChatReply {
@@ -28,6 +36,7 @@ export interface ChatReply {
   sessionId: string;
 }
 export interface PortalService {
+  info(signal?: AbortSignal): Promise<{ mode: 'demo' | 'agentcore' }>;
   currentCustomer(signal?: AbortSignal): Promise<Customer>;
   login(email: string, password: string): Promise<Customer>;
   logout(): Promise<void>;

@@ -8,7 +8,7 @@ This educational implementation was developed for **Udacity's AWS Agent Engineer
 
 ## Local customer portal (post-submission extension)
 
-The [React + Material UI customer portal](frontend/README.md) runs entirely locally with demo login, fictional order tracking, and scripted support chat. It creates and calls no AWS resources and does not alter the submitted Python agent. See its README for setup, architecture, and the boundary for a future live integration.
+The [React + Material UI customer portal](frontend/README.md) runs locally and connects through a local authenticated backend to the existing deployed AgentCore Runtime and project DynamoDB records. A separate offline demo mode is available. It creates no AWS resources and does not alter the submitted Python agent. See its README for setup, architecture, and the boundary for a future live integration.
 
 ## Key Features
 

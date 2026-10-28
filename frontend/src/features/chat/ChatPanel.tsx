@@ -17,6 +17,7 @@ import {
 } from '@mui/material';
 import { ArrowUpward, AutoAwesomeOutlined, RestartAlt, ShieldOutlined } from '@mui/icons-material';
 import { useChat } from './useChat';
+import { useAuth } from '../auth/AuthProvider';
 
 export function ChatPanel({
   draft,
@@ -25,6 +26,7 @@ export function ChatPanel({
   draft: { text: string; key: number } | null;
   onDraftConsumed(): void;
 }) {
+  const { mode } = useAuth();
   const { messages, busy, error, send, reset } = useChat();
   const [input, setInput] = useState('');
   const conversation = useRef<HTMLDivElement>(null);
@@ -91,7 +93,7 @@ export function ChatPanel({
                   mr: 0.7,
                 }}
               />
-              Local demo assistant
+              {mode === 'demo' ? 'Local demo assistant' : 'Project agent · AgentCore Runtime'}
             </Typography>
           </Box>
         </Stack>
@@ -113,7 +115,9 @@ export function ChatPanel({
         }}
       >
         <Typography variant="caption" color="text.secondary">
-          Scripted demo · sample orders · no live AI or AWS calls
+          {mode === 'demo'
+            ? 'Scripted demo · sample orders · no live AI or AWS calls'
+            : 'Live model response · requests may take a minute'}
         </Typography>
       </Box>
       <Box
@@ -157,24 +161,27 @@ export function ChatPanel({
         ))}
         {messages.length === 1 && (
           <Stack spacing={1} sx={{ mt: 2, alignItems: 'flex-start' }}>
-            {['Where is DEMO-1042?', 'What is the return window?', 'Track DEMO-1038'].map(
-              (question) => (
-                <Chip
-                  key={question}
-                  label={question}
-                  variant="outlined"
-                  onClick={() => setInput(question)}
-                  sx={{ bgcolor: '#fff', fontSize: 12, maxWidth: '100%' }}
-                />
-              ),
-            )}
+            {(mode === 'demo'
+              ? ['Where is DEMO-1042?', 'What is the return window?', 'Track DEMO-1038']
+              : ['Show my orders', 'What is the return policy?', 'What are the warranty terms?']
+            ).map((question) => (
+              <Chip
+                key={question}
+                label={question}
+                variant="outlined"
+                onClick={() => setInput(question)}
+                sx={{ bgcolor: '#fff', fontSize: 12, maxWidth: '100%' }}
+              />
+            ))}
           </Stack>
         )}
         {busy && (
           <Stack role="status" direction="row" spacing={1} sx={{ my: 2, alignItems: 'center' }}>
             <CircularProgress size={14} />
             <Typography variant="caption" color="text.secondary">
-              Nova is checking the demo details…
+              {mode === 'demo'
+                ? 'Nova is checking the demo details…'
+                : 'Your project agent is working…'}
             </Typography>
           </Stack>
         )}

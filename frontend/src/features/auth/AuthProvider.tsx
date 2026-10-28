@@ -4,6 +4,7 @@ import type { Customer, PortalService } from '../../services/contracts';
 import { ApiError, portalService } from '../../services/portalService';
 
 interface AuthState {
+  mode: 'demo' | 'agentcore';
   customer: Customer | null;
   loading: boolean;
   error: string;
@@ -17,13 +18,18 @@ export function AuthProvider({
   children,
   service = portalService,
 }: PropsWithChildren<{ service?: PortalService }>) {
+  const [mode, setMode] = useState<'demo' | 'agentcore'>('agentcore');
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   useEffect(() => {
     const controller = new AbortController();
     service
-      .currentCustomer(controller.signal)
+      .info(controller.signal)
+      .then((info) => {
+        if (!controller.signal.aborted) setMode(info.mode);
+        return service.currentCustomer(controller.signal);
+      })
       .then((user) => {
         if (!controller.signal.aborted) setCustomer(user);
       })
@@ -59,7 +65,9 @@ export function AuthProvider({
     }
   };
   return (
-    <AuthContext.Provider value={{ customer, loading, error, service, login, logout, expire }}>
+    <AuthContext.Provider
+      value={{ customer, mode, loading, error, service, login, logout, expire }}
+    >
       {children}
     </AuthContext.Provider>
   );

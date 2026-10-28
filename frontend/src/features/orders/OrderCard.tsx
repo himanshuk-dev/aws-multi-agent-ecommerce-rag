@@ -5,21 +5,43 @@ import {
   HeadphonesOutlined,
   LocalShippingOutlined,
   SpeakerOutlined,
+  Inventory2Outlined,
 } from '@mui/icons-material';
 import type { Order } from '../../services/contracts';
 export const statusLabels = {
   in_transit: 'On the way',
   delivered: 'Delivered',
   return_requested: 'Return requested',
+  processing: 'Processing',
+  shipped: 'Shipped',
+  cancelled: 'Cancelled',
+  unknown: 'Status unavailable',
 };
-export const formatDate = (date: string) =>
-  new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
-    new Date(date + 'T12:00:00Z'),
-  );
-export const formatMoney = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+export const formatDate = (value: string | null) => {
+  if (!value) return 'Not recorded';
+  const parsed = new Date(value + 'T12:00:00Z');
+  return Number.isNaN(parsed.getTime())
+    ? 'Not recorded'
+    : new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+        parsed,
+      );
+};
+export const formatMoney = (amount: number | null) =>
+  amount === null
+    ? 'Price not recorded'
+    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+export const deliveryLabel = (order: Order) =>
+  order.deliveryDateKind === 'estimated'
+    ? 'Recorded delivery estimate'
+    : order.status === 'delivered'
+      ? 'Delivered'
+      : 'Estimated delivery';
 export function ProductArt({ order, compact = false }: { order: Order; compact?: boolean }) {
-  const Icon = order.product.includes('Headphone') ? HeadphonesOutlined : SpeakerOutlined;
+  const Icon = order.product.includes('Headphone')
+    ? HeadphonesOutlined
+    : order.product.includes('Speaker')
+      ? SpeakerOutlined
+      : Inventory2Outlined;
   return (
     <Box
       aria-hidden
@@ -80,11 +102,10 @@ export function OrderCard({
             {order.product}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Qty {order.quantity} · {formatMoney(order.price)}
+            Qty {order.quantity ?? 'not recorded'} · {formatMoney(order.price)}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1, fontWeight: 600 }}>
-            {order.status === 'delivered' ? 'Delivered' : 'Estimated delivery'}{' '}
-            {formatDate(order.deliveryDate)}
+            {deliveryLabel(order)} {formatDate(order.deliveryDate)}
           </Typography>
         </Box>
       </Stack>
