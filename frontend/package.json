@@ -8,10 +8,12 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
-    "api": "node server/index.mjs",
+    "api": "node --env-file=.portal.env server/index.mjs",
     "test:api": "node --test server/*.test.mjs",
     "format": "prettier --write src tests server *.ts *.json *.html",
-    "format:check": "prettier --check src tests server *.ts *.json *.html"
+    "format:check": "prettier --check src tests server *.ts *.json *.html",
+    "api:demo": "node server/index.mjs --demo",
+    "setup:account": "node server/setup-account.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

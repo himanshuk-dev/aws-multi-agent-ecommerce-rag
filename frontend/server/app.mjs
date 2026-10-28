@@ -7,9 +7,19 @@ const passwordHash = scryptSync(DEMO_PASSWORD, 'novamart-public-demo', 64);
 const COOKIE = 'novamart_demo';
 const TTL = 30 * 60 * 1000;
 const MAX_BODY = 8192;
+export const demoProvider = {
+  mode: 'demo',
+  authenticate: (email, password) =>
+    email.toLowerCase().trim() === demoCustomer.email &&
+    timingSafeEqual(scryptSync(password, 'novamart-public-demo', 64), passwordHash),
+  customer: async () => ({ ...demoCustomer, mode: 'demo' }),
+  orders: async () => demoOrders,
+  chat: async (message, sessionId) => ({ reply: demoReply(message), sessionId }),
+};
 
 export function createPortalServer({
   now = Date.now,
+  provider = demoProvider,
   allowedOrigins = ['http://127.0.0.1:5173', 'http://localhost:5173'],
 } = {}) {
   const sessions = new Map();
@@ -34,6 +44,7 @@ export function createPortalServer({
     for (const [key, session] of sessions) if (session.expires <= instant) sessions.delete(key);
     for (const [key, attempt] of attempts) if (attempt.reset <= instant) attempts.delete(key);
     const session = sessions.get(cookie);
+    if (path === '/api/config' && req.method === 'GET') return send(200, { mode: provider.mode });
     let body = {};
     if (req.method === 'POST') {
       if (!req.headers['content-type']?.startsWith('application/json'))
@@ -64,22 +75,35 @@ export function createPortalServer({
       attempts.set(key, attempt);
       const validPassword =
         typeof body.password === 'string' &&
+        body.password.length > 0 &&
         body.password.length <= 128 &&
-        timingSafeEqual(scryptSync(body.password, 'novamart-public-demo', 64), passwordHash);
-      if (
-        typeof body.email !== 'string' ||
-        body.email.toLowerCase().trim() !== demoCustomer.email ||
-        !validPassword
-      )
-        return send(401, { error: 'Email or password is incorrect.' });
+        typeof body.email === 'string' &&
+        body.email.length <= 254 &&
+        provider.authenticate(body.email, body.password);
+      if (!validPassword) return send(401, { error: 'Email or password is incorrect.' });
+      let customer;
+      try {
+        customer = await provider.customer();
+      } catch {
+        return send(503, {
+          error:
+            'Unable to load the project customer. Check AWS authentication and the server customer mapping.',
+        });
+      }
       if (cookie) sessions.delete(cookie);
       const token = randomBytes(32).toString('hex');
-      sessions.set(token, { expires: instant + TTL, chats: new Map() });
+      sessions.set(token, {
+        expires: instant + TTL,
+        chats: new Map(),
+        customer,
+        scope: randomBytes(16).toString('hex'),
+        busy: new Set(),
+      });
       res.setHeader(
         'Set-Cookie',
         `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=1800`,
       );
-      return send(200, demoCustomer);
+      return send(200, customer);
     }
     if (path === '/api/logout' && req.method === 'POST') {
       if (cookie) sessions.delete(cookie);
@@ -87,8 +111,16 @@ export function createPortalServer({
       return send(200, { ok: true });
     }
     if (!session) return send(401, { error: 'Your session has expired. Please sign in again.' });
-    if (path === '/api/me' && req.method === 'GET') return send(200, demoCustomer);
-    if (path === '/api/orders' && req.method === 'GET') return send(200, demoOrders);
+    if (path === '/api/me' && req.method === 'GET') return send(200, session.customer);
+    if (path === '/api/orders' && req.method === 'GET') {
+      try {
+        return send(200, await provider.orders());
+      } catch {
+        return send(503, {
+          error: 'Unable to load orders from the project. Check local AWS authentication.',
+        });
+      }
+    }
     if (path === '/api/chat' && req.method === 'POST') {
       if (
         typeof body.message !== 'string' ||
@@ -103,11 +135,30 @@ export function createPortalServer({
       const window = session.chats.get(body.sessionId) ?? [];
       if (window.length >= 50 || (session.chats.size >= 20 && !session.chats.has(body.sessionId)))
         return send(429, {
-          error: 'Demo conversation limit reached. Sign out and sign in to reset.',
+          error: 'Conversation limit reached. Sign out and sign in to reset.',
         });
-      window.push(body.message);
+      if (session.busy.has(body.sessionId))
+        return send(409, { error: 'This conversation already has a request in progress.' });
+      // Serialize turns and scope the Runtime/WorkflowState session to the server
+      // login. A browser cannot reuse another login's workflow by forging an ID.
+      session.busy.add(body.sessionId);
       session.chats.set(body.sessionId, window);
-      return send(200, { reply: demoReply(body.message), sessionId: body.sessionId });
+      try {
+        const result = await provider.chat(
+          body.message.trim(),
+          `${session.scope}-${body.sessionId}`,
+        );
+        window.push(body.message);
+        return send(200, { reply: result.reply, sessionId: body.sessionId });
+      } catch {
+        // Never substitute a fabricated/demo reply when the live agent fails.
+        return send(502, {
+          error:
+            'The agent could not complete this request. Check AWS authentication and runtime availability before retrying.',
+        });
+      } finally {
+        session.busy.delete(body.sessionId);
+      }
     }
     return send(404, { error: 'This endpoint does not exist.' });
   });

@@ -92,3 +92,75 @@ test('limits login attempts and resets after a minute', async (t) => {
   time += 60_000;
   assert.equal((await call('/login', { body: {} })).status, 401);
 });
+
+test('live API scopes conversation IDs per authenticated login and does not leak failures', async (t) => {
+  const calls = [];
+  const provider = {
+    mode: 'agentcore',
+    authenticate: () => true,
+    customer: async () => ({ id: 'CUST-001', name: 'Test customer', tier: 'Premium' }),
+    orders: async () => [{ id: 'ORD-REAL' }],
+    chat: async (message, sessionId) => {
+      calls.push({ message, sessionId });
+      if (message === 'fail') throw new Error('SECRET AWS DETAIL');
+      return { reply: 'Deployed adapter answer' };
+    },
+  };
+  const { call, login } = await fixture(t, { provider });
+  assert.deepEqual(await (await call('/config')).json(), { mode: 'agentcore' });
+  assert.equal(
+    (await call('/chat', { body: { message: 'hello', sessionId: 'same-session' } })).status,
+    401,
+  );
+  const cookie = await login();
+  const chat = (message, auth = cookie) =>
+    call('/chat', {
+      cookie: auth,
+      body: { message, sessionId: 'same-session', customerId: 'CUST-OTHER' },
+    });
+  assert.equal((await (await chat('hello')).json()).reply, 'Deployed adapter answer');
+  await chat('next');
+  assert.equal(calls[0].sessionId, calls[1].sessionId);
+  const otherCookie = await login();
+  await chat('other login', otherCookie);
+  assert.notEqual(calls[0].sessionId, calls[2].sessionId);
+  assert.notEqual(calls[0].sessionId, 'same-session');
+  const failed = await chat('fail');
+  assert.equal(failed.status, 502);
+  const text = await failed.text();
+  assert.ok(!text.includes('SECRET'));
+  assert.ok(!text.includes('demo order'));
+});
+
+test('live API serializes turns and releases the lock after agent failure', async (t) => {
+  let started;
+  let reject;
+  const entered = new Promise((resolve) => {
+    started = resolve;
+  });
+  let attempts = 0;
+  const provider = {
+    mode: 'agentcore',
+    authenticate: () => true,
+    customer: async () => ({ id: 'CUST-001' }),
+    orders: async () => [],
+    chat: async () => {
+      if (++attempts === 1) {
+        started();
+        return new Promise((_resolve, rejectCall) => {
+          reject = rejectCall;
+        });
+      }
+      return { reply: 'Recovered' };
+    },
+  };
+  const { call, login } = await fixture(t, { provider });
+  const cookie = await login();
+  const body = { message: 'hello', sessionId: 'same-session' };
+  const first = call('/chat', { cookie, body });
+  await entered;
+  assert.equal((await call('/chat', { cookie, body })).status, 409);
+  reject(new Error('runtime unavailable'));
+  assert.equal((await first).status, 502);
+  assert.equal((await (await call('/chat', { cookie, body })).json()).reply, 'Recovered');
+});
