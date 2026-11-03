@@ -1,0 +1,29 @@
+html {
+  min-width: 320px;
+}
+body {
+  margin: 0;
+}
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+::selection {
+  background: #d8e8bd;
+  color: #132f2a;
+}
+:focus-visible {
+  outline: 3px solid #76a997;
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

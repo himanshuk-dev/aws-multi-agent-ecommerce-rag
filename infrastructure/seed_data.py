@@ -5,7 +5,7 @@ Pre-deployment script run by Udacity workspace provisioner.
 Seeds DynamoDB tables with realistic mock customer support data
 and uploads policy documents to S3 for the RAG pipeline.
 
-Students do NOT run this script - it is executed during workspace setup.
+Run explicitly after provisioning the foundation. Existing records are preserved.
 """
 
 import boto3
@@ -13,25 +13,39 @@ import json
 import os
 import sys
 from datetime import datetime, timedelta
-import random
 
-dynamodb = boto3.resource('dynamodb', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
-s3 = boto3.client('s3', region_name=os.environ.get('AWS_REGION', 'us-east-1'))
+from botocore.exceptions import ClientError
 
 PROJECT_NAME = os.environ.get('PROJECT_NAME', 'udacity-agentcore')
-ACCOUNT_ID = boto3.client('sts').get_caller_identity()['Account']
+REGION = os.environ.get('AWS_REGION', 'us-east-1')
+dynamodb = None
+s3 = None
+POLICY_BUCKET = None
 
-cf_client = boto3.client('cloudformation', region_name='us-east-1')
-try:
-    stack_info = cf_client.describe_stacks(StackName="udacity-agentcore")
-    stack_id = stack_info['Stacks'][0]['StackId']
-    full_uuid = stack_id.split('/')[-1]
-    short_uuid = full_uuid.split('-')[0]
-except Exception as e:
-    print(f"Warning: Could not fetch stack UUID. Check your AWS credentials. Error: {e}")
-    stack_uuid = "unknown"
 
-POLICY_BUCKET = f"{PROJECT_NAME}-policy-docs-{ACCOUNT_ID}-{short_uuid}"
+def initialize_clients():
+    """Resolve the deployed bucket rather than reconstructing its name."""
+    global dynamodb, s3, POLICY_BUCKET
+    dynamodb = boto3.resource('dynamodb', region_name=REGION)
+    s3 = boto3.client('s3', region_name=REGION)
+    cf = boto3.client('cloudformation', region_name=REGION)
+    exports = {e['Name']: e['Value']
+               for page in cf.get_paginator('list_exports').paginate()
+               for e in page['Exports']}
+    POLICY_BUCKET = exports[f'{PROJECT_NAME}-PolicyBucket']
+
+
+def insert_if_missing(table, item):
+    """Never overwrite an existing customer or reset an existing order."""
+    key = 'order_id' if 'order_id' in item else 'customer_id'
+    try:
+        table.put_item(Item=item, ConditionExpression='attribute_not_exists(#key)',
+                       ExpressionAttributeNames={'#key': key})
+        return True
+    except ClientError as exc:
+        if exc.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            return False
+        raise
 
 # ─────────────────────────────────────────────
 # MOCK CUSTOMER DATA
@@ -92,27 +106,26 @@ PRODUCTS = [
 STATUSES = ["delivered", "shipped", "processing", "cancelled", "return_requested"]
 
 def generate_orders():
+    """Recreate fictional demo records, not recover deleted production data.
+
+    Stable IDs match the documented scenarios. Dates are relative only when a
+    record is first created; conditional writes preserve it on subsequent runs.
+    """
+    today = datetime.now()
     orders = []
-    for customer in CUSTOMERS:
-        num_orders = random.randint(2, 5)
-        for i in range(num_orders):
-            product = random.choice(PRODUCTS)
-            order_date = datetime.now() - timedelta(days=random.randint(1, 120))
-            status = random.choice(STATUSES)
-            orders.append({
-                "customer_id": customer["customer_id"],
-                "order_id": f"ORD-{random.randint(10000, 99999)}",
-                "product_name": product[0],
-                "product_category": product[2],
-                "price": str(product[1]),
-                "quantity": str(random.randint(1, 3)),
-                "status": status,
-                "order_date": order_date.strftime("%Y-%m-%d"),
-                "estimated_delivery": (order_date + timedelta(days=5)).strftime("%Y-%m-%d"),
-                "tracking_number": f"TRK{random.randint(100000000, 999999999)}",
-                "return_eligible": str(status == "delivered" and 
-                                       (datetime.now() - order_date).days <= 30).lower()
-            })
+    for order_id, product, status, eligible, days in (
+        ('ORD-12142', PRODUCTS[0], 'return_requested', 'false', 10),
+        ('ORD-59651', PRODUCTS[6], 'delivered', 'true', 7),
+    ):
+        ordered = today - timedelta(days=days)
+        orders.append({
+            'customer_id': 'CUST-001', 'order_id': order_id,
+            'product_name': product[0], 'product_category': product[2],
+            'price': str(product[1]), 'quantity': '1', 'status': status,
+            'order_date': ordered.strftime('%Y-%m-%d'),
+            'estimated_delivery': (ordered + timedelta(days=5)).strftime('%Y-%m-%d'),
+            'return_eligible': eligible,
+        })
     return orders
 
 # ─────────────────────────────────────────────
@@ -291,18 +304,16 @@ Premium tier customers receive an automatic 3-year warranty on all Electronics.
 def seed_customers():
     table = dynamodb.Table(f"{PROJECT_NAME}-customers")
     print("Seeding customers table...")
-    for customer in CUSTOMERS:
-        table.put_item(Item=customer)
-    print(f"  ✓ Inserted {len(CUSTOMERS)} customers")
+    inserted = sum(insert_if_missing(table, customer) for customer in CUSTOMERS)
+    print(f"  ✓ Inserted {inserted} customers; preserved {len(CUSTOMERS) - inserted}")
 
 
 def seed_orders():
     table = dynamodb.Table(f"{PROJECT_NAME}-orders")
     print("Seeding orders table...")
     orders = generate_orders()
-    for order in orders:
-        table.put_item(Item=order)
-    print(f"  ✓ Inserted {len(orders)} orders")
+    inserted = sum(insert_if_missing(table, order) for order in orders)
+    print(f"  ✓ Inserted {inserted} orders; preserved {len(orders) - inserted}")
 
 
 def upload_policy_documents():
@@ -356,10 +367,10 @@ if __name__ == '__main__':
     print("Udacity AgentCore Project - Data Seeding")
     print("=" * 50)
     
+    initialize_clients()
     seed_customers()
     seed_orders()
     upload_policy_documents()
-    create_test_user()
     
     print("\n✅ Workspace seeding complete!")
     print("\nExported resource names:")

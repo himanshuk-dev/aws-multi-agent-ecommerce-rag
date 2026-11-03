@@ -3,7 +3,7 @@ Description: >
   Udacity Project - Enterprise Multi-Agent Architecture with Amazon Bedrock AgentCore
   Pre-deployed infrastructure: DynamoDB, S3, IAM Roles, CloudWatch.
   Cognito and API Gateway removed - project is tested via terminal, no UI required.
-  Students do NOT modify this stack. They build the AI agent layer on top of it.
+  Includes native S3 Vectors indexes for reproducible personal deployments.
 
 Parameters:
   ProjectName:
@@ -89,21 +89,50 @@ Resources:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
 
-  # Used by Bedrock Knowledge Bases as the S3 Vectors backing store.
-  # Each Knowledge Base (returns, shipping, warranty) stores its
-  # vector index here under separate prefixes managed by Bedrock.
+  # Native vector storage; ordinary S3 buckets cannot back S3 Vectors KBs.
   VectorStoreBucket:
-    Type: AWS::S3::Bucket
+    Type: AWS::S3Vectors::VectorBucket
     Properties:
-      BucketName: !Sub 
-        - '${ProjectName}-vectors-${AWS::AccountId}-${ShortUUID}'
-        - ShortUUID: !Select [0, !Split ['-', !Select [2, !Split ['/', !Ref 'AWS::StackId']]]]
-      VersioningConfiguration:
-        Status: Enabled
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+      VectorBucketName: !Sub '${ProjectName}-vectors-${AWS::AccountId}'
+
+  ReturnsVectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketArn: !GetAtt VectorStoreBucket.VectorBucketArn
+      IndexName: returns-policy-index
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
+
+  ShippingVectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketArn: !GetAtt VectorStoreBucket.VectorBucketArn
+      IndexName: shipping-policy-index
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
+
+  WarrantyVectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketArn: !GetAtt VectorStoreBucket.VectorBucketArn
+      IndexName: warranty-policy-index
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
 
   # ─────────────────────────────────────────────
   # IAM - Role for AgentCore
@@ -133,6 +162,7 @@ Resources:
                 Action:
                   - bedrock:InvokeModel
                   - bedrock:InvokeModelWithResponseStream
+                  - bedrock:GetGuardrail
                   - bedrock:ApplyGuardrail
                 Resource: "*"
 
@@ -143,7 +173,6 @@ Resources:
               - Effect: Allow
                 Action:
                   - bedrock:Retrieve
-                  - bedrock-agent:Retrieve
                 Resource: "*"
 
               # CloudWatch Logs - agent execution logs (Task 6: Observability)
@@ -162,6 +191,8 @@ Resources:
                 Action:
                   - xray:PutTraceSegments
                   - xray:PutTelemetryRecords
+                  - xray:GetSamplingRules
+                  - xray:GetSamplingTargets
                 Resource: "*"
 
               # DynamoDB - all tables the agents read/write
@@ -191,13 +222,20 @@ Resources:
                 Resource:
                   - !GetAtt PolicyDocumentsBucket.Arn
                   - !Sub ${PolicyDocumentsBucket.Arn}/*
-                  - !GetAtt VectorStoreBucket.Arn
-                  - !Sub ${VectorStoreBucket.Arn}/*
 
               # S3 Vectors - backing store for Bedrock Knowledge Bases (Task 5)
               - Effect: Allow
                 Action:
                   - s3vectors:*
+                Resource:
+                  - !GetAtt VectorStoreBucket.VectorBucketArn
+                  - !Sub '${VectorStoreBucket.VectorBucketArn}/index/*'
+
+              # config.py discovers foundation exports at runtime.
+              - Effect: Allow
+                Action:
+                  - cloudformation:ListExports
+                  - cloudformation:DescribeStacks
                 Resource: "*"
 
   # ─────────────────────────────────────────────
@@ -237,7 +275,7 @@ Outputs:
       Name: !Sub ${ProjectName}-PolicyBucket
 
   VectorStoreBucketName:
-    Value: !Ref VectorStoreBucket
+    Value: !Sub '${ProjectName}-vectors-${AWS::AccountId}'
     Export:
       Name: !Sub ${ProjectName}-VectorBucket
 
@@ -250,3 +288,23 @@ Outputs:
     Value: !Ref AgentLogGroup
     Export:
       Name: !Sub ${ProjectName}-AgentLogGroup
+
+  VectorStoreBucketArn:
+    Value: !GetAtt VectorStoreBucket.VectorBucketArn
+    Export:
+      Name: !Sub ${ProjectName}-VectorBucketArn
+
+  ReturnsVectorIndexName:
+    Value: returns-policy-index
+    Export:
+      Name: !Sub ${ProjectName}-ReturnsVectorIndex
+
+  ShippingVectorIndexName:
+    Value: shipping-policy-index
+    Export:
+      Name: !Sub ${ProjectName}-ShippingVectorIndex
+
+  WarrantyVectorIndexName:
+    Value: warranty-policy-index
+    Export:
+      Name: !Sub ${ProjectName}-WarrantyVectorIndex

@@ -32,15 +32,15 @@
         },
         {
           "name": "RETURNS_KB_ID",
-          "value": "PRPQMVD7GQ"
+          "value": "YBWA03E0BW"
         },
         {
           "name": "SHIPPING_KB_ID",
-          "value": "TDREMY4823"
+          "value": "XXGNLMTKMD"
         },
         {
           "name": "WARRANTY_KB_ID",
-          "value": "PU7PEIJPRL"
+          "value": "XL6NUAU37T"
         },
         {
           "name": "AGENT_LOG_GROUP",
@@ -48,11 +48,11 @@
         },
         {
           "name": "GUARDRAIL_ID",
-          "value": "7q9vj1pxupml"
+          "value": "dhsre1hqpmik"
         },
         {
           "name": "GUARDRAIL_VERSION",
-          "value": "3"
+          "value": "1"
         },
         {
           "name": "AGENT_LOG_LEVEL",

@@ -6,6 +6,48 @@ This educational implementation was developed for **Udacity's AWS Agent Engineer
 
 **Final verification: official Udacity suite 120/120 points; offline regression suite 28/28 tests.** Offline testing made zero AWS transport attempts. All 77 original assertion sites were preserved, with five new assertions added. The repository includes the [official-suite result](screenshots/10_full_test_suite_120_pass.png) and an [earlier AWS X-Ray Service Map](screenshots/11_xray_service_map.png). These are recorded evidence, not a guarantee that the AWS lab remains available.
 
+## Local customer portal (post-submission extension)
+
+The [React + Material UI customer portal](frontend/README.md) runs locally. Its Node backend uses the Python adapter to invoke the deployed AgentCore Runtime and load project customer/order records from DynamoDB. Starting the portal does not provision AWS resources; live requests use the existing AWS deployment.
+
+### Run the frontend and backend
+
+Prerequisites: **Node.js 22.12+**, the repository's Python environment at `.venv` with `requirements.txt` installed, valid local AWS credentials, and a populated root `.env` pointing to available project resources. See [Setup and Configuration](#setup-and-configuration) below for Python and AWS setup. If you use `AWS_PROFILE` or shell-based temporary credentials, configure them in the backend terminal. Credentials stay server-side.
+
+**One-time setup**, from the repository root:
+
+```bash
+cd frontend
+npm ci
+npm run setup:account -- owner@novamart.local CUST-001
+```
+
+Skip `setup:account` if your private account files already exist; it refuses to overwrite them. This creates a local login mapped to the existing project customer `CUST-001`, not a Cognito account. Read your generated password locally from `frontend/.portal-password`. That file and `frontend/.portal.env` are gitignored; keep both private.
+
+**Terminal 1 — backend**, from the repository root:
+
+```bash
+cd frontend
+npm run api
+```
+
+To enable the login screen's **Use test account** button, run `npm run api:test` instead. It signs in using the existing private local account files without exposing the password to the browser. Stop the existing backend first so port 3001 is free. This opt-in shortcut works only from the local portal, is disabled when `NODE_ENV=production`, and must not be enabled on a publicly accessible server. It still uses the real deployed AWS agent, not scripted demo responses.
+
+The backend listens at **http://127.0.0.1:3001** in AgentCore mode. It starts the Python bridge for requests using `.venv/bin/python`; set server-side `PORTAL_PYTHON` if your Python environment is elsewhere. No separate Python server or `agent_orchestrator.py chat` process is needed.
+
+**Terminal 2 — frontend**, from the repository root:
+
+```bash
+cd frontend
+npm run dev -- --strictPort
+```
+
+Open **http://127.0.0.1:5173/** and sign in with your configured email and generated password. Confirm the **LIVE AGENT** badge. Vite forwards `/api` requests to the backend; order cards read DynamoDB and chat invokes the deployed multi-agent system.
+
+Stop either server with **Ctrl+C** in its terminal. Run only one backend on port 3001. If AWS credentials expire, refresh them and restart the backend; missing/deleted AWS resources must be restored, not replaced with demo responses. `npm run preview` serves only the production frontend bundle and does not provide the development API proxy.
+
+For an explicit **offline demo**, use `npm run api:demo` instead of `npm run api` in Terminal 1, with the same frontend command. It shows **LOCAL DEMO**, offers demo credentials, and uses scripted fictional responses without AWS calls. See the [portal README](frontend/README.md) for architecture, tests, and the single-owner authentication limitations, and the [restoration report](docs/RESTORATION.md) for current deployment verification.
+
 ## Key Features
 
 - **Specialist delegation:** a Claude Haiku 4.5 orchestrator coordinates Claude Sonnet 4.5 workers and delegates the final reply to the Communication Agent.
@@ -134,7 +176,7 @@ WorkflowState separates agent coordination from conversation text. Routing tools
 │   ├── agent_utils.py                 # Terminal trace presentation
 │   └── demo.py                        # Local return-request demonstration
 ├── infrastructure/
-│   ├── starter_stack.yaml            # Foundation starter template; see provisioning caveat
+│   ├── starter_stack.yaml            # Foundation with native S3 Vectors indexes
 │   ├── seed_data.py                   # Fictional customers/orders and policy documents
 │   └── cleanup.py                     # AWS cleanup; dry-run by default
 ├── agentcore/
@@ -204,6 +246,10 @@ The deployment pipeline **prints** the runtime ARN and guardrail ID/version; it 
 
 ### 3. Foundation Infrastructure and Seeding
 
+For the November 2 personal-development restoration and live verification, see
+[restoration details](docs/RESTORATION.md). Submission screenshots are historical
+evidence and may show resources replaced during restoration.
+
 In a Udacity workspace, check the existing stack first. For a new account, the included starter foundation can be deployed with:
 
 ```bash
@@ -215,7 +261,7 @@ aws cloudformation deploy \
   --region us-east-1
 ```
 
-**Provisioning caveat:** the bundled template creates DynamoDB tables, regular S3 buckets, an IAM role, and a log group. Its `VectorStoreBucket` is `AWS::S3::Bucket`, not a native S3 Vectors bucket; it does not create the three vector indexes or export their identifiers. Do not treat this template alone as a complete reproduction of the validated lab infrastructure. Native S3 Vectors resources, their required CloudFormation exports, and appropriate Bedrock/observability permissions must be supplied by the lab foundation or separately provisioned before KB setup. For a fresh environment, extend or replace the foundation outside this documentation change so that `VectorBucket` refers to the native vector bucket and the additional native-vector outputs resolve correctly; the starter's regular S3 bucket cannot substitute for it. [config.py](config.py) expects `VectorBucketArn`, `ReturnsVectorIndex`, `ShippingVectorIndex`, and `WarrantyVectorIndex` exports in addition to the basic resources.
+The foundation template now provisions the three DynamoDB tables, policy-document bucket, a native `AWS::S3Vectors::VectorBucket`, three 1024-dimensional cosine indexes, runtime IAM role, and log group. It exports the native bucket ARN and index names expected by [config.py](config.py). The vector indexes mark Bedrock text and metadata as non-filterable. Deploying this stack does not itself create or synchronize the Bedrock Knowledge Bases.
 
 With the foundation available, inspect configuration and seed only if required:
 
@@ -224,7 +270,7 @@ python config.py
 python infrastructure/seed_data.py
 ```
 
-The seed script writes fictional customer/order records and uploads documents under `policies/returns/`, `policies/shipping/`, and `policies/warranty/`. It assumes stack `udacity-agentcore` in `us-east-1`, uses exported shell settings rather than loading `.env` itself, and generates order dates and some order IDs. Use current seeded records when testing; historical screenshots may show different IDs. It also attempts to create a test Cognito user if a User Pool export exists; this does not authenticate the application endpoint.
+The seed script creates fictional customers and the documented `CUST-001` orders `ORD-12142` (return requested) and `ORD-59651` (delivered). It resolves the policy bucket from CloudFormation exports and uploads the unchanged policies under the three domain prefixes. Conditional writes preserve existing customers and orders on repeat runs. Dates are relative to first creation; restoring these fictional records does not recover deleted records. The script uses shell `AWS_REGION` and `PROJECT_NAME` settings and does not load `.env` itself or create a Cognito user.
 
 ### 4. Knowledge Bases and Synchronization
 
@@ -348,7 +394,7 @@ All screenshots are historical captures of the fictional dataset. Some show inte
 | [19 — Live local orchestration execution](screenshots/19_orchestrator_test_passed.png) | Execution of `python src/agent_orchestrator.py test` with three completed scenarios and published trace IDs. Completion does not establish behavioral success: the return scenario reports an inventory lookup error and the math scenario refuses the calculation. |
 | [20 — Local-test X-Ray Service Map](screenshots/20_xray_service_map.png) | Connected NovaMart orchestrator, Inventory, Refund, Policy, Communication, and all three Knowledge Base nodes; trace connectivity does not establish successful business outcomes. |
 
-The storage captures show the native bucket `udacity-agentcore-policy-vectors`. They establish the actual KB backing store and index names, but do not resolve its mismatch with the foundation stack's regular S3 `VectorStoreBucket` described above.
+The storage captures show the native bucket `udacity-agentcore-policy-vectors`. They are historical submission evidence. The November 2 restoration uses the native vector bucket exported by the updated foundation; historical screenshots do not verify that new deployment.
 
 ## Observability
 
