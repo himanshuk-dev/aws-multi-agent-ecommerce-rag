@@ -102,8 +102,8 @@ is not guaranteed to preserve that distinction; no confirmed delivery timestamp
 or carrier evidence was added. Further response grounding and production
 customer authorization remain separate work.
 
-Local tracked `.env` was updated with restored deployment identifiers and is
-left uncommitted because it already had local edits before restoration. Its
-eight variables are deployment settings, not AWS authentication credentials.
-Private portal account files remain ignored and were not committed. No branch
-was pushed.
+Local `.env` was updated with restored deployment identifiers. It is now
+untracked and gitignored; the local file is preserved. Its eight variables are
+deployment settings, not AWS authentication credentials. Removing it from the
+current branch does not erase previously committed versions from Git history.
+Private portal account files remain ignored and are not committed.
