@@ -5,6 +5,8 @@ import { ApiError, portalService } from '../../services/portalService';
 
 interface AuthState {
   mode: 'demo' | 'agentcore';
+  testLogin: boolean;
+  loginTestAccount(): Promise<void>;
   customer: Customer | null;
   loading: boolean;
   error: string;
@@ -19,6 +21,7 @@ export function AuthProvider({
   service = portalService,
 }: PropsWithChildren<{ service?: PortalService }>) {
   const [mode, setMode] = useState<'demo' | 'agentcore'>('agentcore');
+  const [testLogin, setTestLogin] = useState(false);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -27,7 +30,10 @@ export function AuthProvider({
     service
       .info(controller.signal)
       .then((info) => {
-        if (!controller.signal.aborted) setMode(info.mode);
+        if (!controller.signal.aborted) {
+          setMode(info.mode);
+          setTestLogin(info.testLogin === true);
+        }
         return service.currentCustomer(controller.signal);
       })
       .then((user) => {
@@ -55,6 +61,17 @@ export function AuthProvider({
       throw err;
     }
   };
+  const loginTestAccount = async () => {
+    setError('');
+    try {
+      if (!testLogin || !service.loginTestAccount)
+        throw new Error('Local test login is unavailable.');
+      setCustomer(await service.loginTestAccount());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.');
+      throw err;
+    }
+  };
   const logout = async () => {
     try {
       await service.logout();
@@ -66,7 +83,18 @@ export function AuthProvider({
   };
   return (
     <AuthContext.Provider
-      value={{ customer, mode, loading, error, service, login, logout, expire }}
+      value={{
+        customer,
+        mode,
+        testLogin,
+        loginTestAccount,
+        loading,
+        error,
+        service,
+        login,
+        logout,
+        expire,
+      }}
     >
       {children}
     </AuthContext.Provider>

@@ -20,6 +20,7 @@ export const demoProvider = {
 export function createPortalServer({
   now = Date.now,
   provider = demoProvider,
+  testCredentials,
   allowedOrigins = ['http://127.0.0.1:5173', 'http://localhost:5173'],
 } = {}) {
   const sessions = new Map();
@@ -44,7 +45,8 @@ export function createPortalServer({
     for (const [key, session] of sessions) if (session.expires <= instant) sessions.delete(key);
     for (const [key, attempt] of attempts) if (attempt.reset <= instant) attempts.delete(key);
     const session = sessions.get(cookie);
-    if (path === '/api/config' && req.method === 'GET') return send(200, { mode: provider.mode });
+    if (path === '/api/config' && req.method === 'GET')
+      return send(200, { mode: provider.mode, ...(testCredentials ? { testLogin: true } : {}) });
     let body = {};
     if (req.method === 'POST') {
       if (!req.headers['content-type']?.startsWith('application/json'))
@@ -66,7 +68,26 @@ export function createPortalServer({
         return send(400, { error: 'Invalid JSON request.' });
       }
     }
-    if (path === '/api/login' && req.method === 'POST') {
+    if (path === '/api/test-login' && req.method === 'POST') {
+      if (!testCredentials) return send(404, { error: 'Test login is disabled.' });
+      if (
+        !allowedOrigins.includes(req.headers.origin) ||
+        !/^127\.0\.0\.1$|^::ffff:127\.0\.0\.1$|^::1$/.test(req.socket.remoteAddress) ||
+        !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')
+      )
+        return send(403, { error: 'Test login is available only from the local portal.' });
+      try {
+        body = await testCredentials();
+      } catch {
+        return send(503, {
+          error: 'Local test account is unavailable. Check the private account files.',
+        });
+      }
+    }
+    if (
+      (path === '/api/login' || (path === '/api/test-login' && testCredentials)) &&
+      req.method === 'POST'
+    ) {
       const key = req.socket.remoteAddress;
       const attempt = attempts.get(key) ?? { count: 0, reset: instant + 60_000 };
       if (attempt.count >= 10)

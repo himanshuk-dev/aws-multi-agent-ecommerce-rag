@@ -27,7 +27,7 @@ import { Brand } from '../../components/Brand';
 import { useAuth } from './AuthProvider';
 
 export function LoginPage() {
-  const { login, error, mode } = useAuth();
+  const { login, error, mode, testLogin, loginTestAccount } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
@@ -237,8 +237,29 @@ export function LoginPage() {
               Local login · AWS credentials stay on the server
             </Typography>
           </Stack>
+          {mode === 'agentcore' && testLogin && (
+            <Button
+              type="button"
+              fullWidth
+              variant="outlined"
+              disabled={busy}
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                try {
+                  await loginTestAccount();
+                } catch {
+                  /* AuthProvider owns the error. */
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Use test account
+            </Button>
+          )}
           {mode === 'demo' && <Divider sx={{ my: 3 }} />}
-          {mode === 'demo' ? (
+          {mode === 'demo' && (
             <Paper variant="outlined" sx={{ p: 2.5, bgcolor: '#fafbf6' }}>
               <Typography sx={{ fontWeight: 650 }} variant="body2">
                 Just exploring? Try the demo.
@@ -262,11 +283,6 @@ export function LoginPage() {
                 Fill demo credentials <ArrowForward sx={{ fontSize: 16, ml: 1 }} />
               </Button>
             </Paper>
-          ) : (
-            <Alert severity="info">
-              Sign in with your private local portal account. Customer identity is mapped on the
-              server. Responses come from your deployed project agent.
-            </Alert>
           )}
         </Box>
       </Container>

@@ -36,9 +36,10 @@ export interface ChatReply {
   sessionId: string;
 }
 export interface PortalService {
-  info(signal?: AbortSignal): Promise<{ mode: 'demo' | 'agentcore' }>;
+  info(signal?: AbortSignal): Promise<{ mode: 'demo' | 'agentcore'; testLogin?: boolean }>;
   currentCustomer(signal?: AbortSignal): Promise<Customer>;
   login(email: string, password: string): Promise<Customer>;
+  loginTestAccount?(): Promise<Customer>;
   logout(): Promise<void>;
   orders(signal?: AbortSignal): Promise<Order[]>;
   chat(message: string, sessionId: string, signal?: AbortSignal): Promise<ChatReply>;

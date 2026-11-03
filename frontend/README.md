@@ -15,6 +15,8 @@ npm run setup:account -- owner@novamart.local CUST-001
 npm run api
 ```
 
+To enable the login screen's **Use test account** button, run `npm run api:test` instead. It signs in using the existing private local account files without exposing the password to the browser. Stop the existing backend first so port 3001 is free. This opt-in shortcut works only from the local portal, is disabled when `NODE_ENV=production`, and must not be enabled on a publicly accessible server. It still uses the real deployed AWS agent, not scripted demo responses.
+
 `setup:account` creates two **gitignored, owner-readable local files** without calling AWS:
 
 - `.portal.env`: local login email, server-authorized customer ID, and salted scrypt password hash.

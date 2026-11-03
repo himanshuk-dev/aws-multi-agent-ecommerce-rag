@@ -12,6 +12,7 @@
     "test:api": "node --test server/*.test.mjs",
     "format": "prettier --write src tests server *.ts *.json *.html",
     "format:check": "prettier --check src tests server *.ts *.json *.html",
+    "api:test": "node --env-file=.portal.env server/index.mjs --test-login",
     "api:demo": "node server/index.mjs --demo",
     "setup:account": "node server/setup-account.mjs"
   },

@@ -57,6 +57,20 @@ async function signIn(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 describe('customer portal', () => {
+  it('uses the enabled local test account without exposing its password', async () => {
+    const user = userEvent.setup();
+    const loginTestAccount = vi.fn().mockResolvedValue(customer);
+    const api = service({
+      info: vi.fn().mockResolvedValue({ mode: 'agentcore', testLogin: true }),
+      loginTestAccount,
+    });
+    mount(api);
+    await user.click(await screen.findByRole('button', { name: 'Use test account' }));
+    await screen.findByText('LIVE AGENT');
+    expect(loginTestAccount).toHaveBeenCalledOnce();
+    expect(api.login).not.toHaveBeenCalled();
+  });
+
   it('live mode hides public demo login and displays agent errors without fictional replies', async () => {
     const user = userEvent.setup();
     const api = service({
@@ -68,6 +82,7 @@ describe('customer portal', () => {
     mount(api);
     await screen.findByRole('heading', { name: 'Welcome back.' });
     expect(screen.queryByRole('button', { name: /Fill demo credentials/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use test account' })).not.toBeInTheDocument();
     await user.type(screen.getByRole('textbox', { name: 'Email address' }), 'owner@example.com');
     await user.type(screen.getByLabelText(/^Password/, { selector: 'input' }), 'private-password');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));

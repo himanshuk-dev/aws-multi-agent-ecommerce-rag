@@ -164,3 +164,44 @@ test('live API serializes turns and releases the lock after agent failure', asyn
   assert.equal((await first).status, 502);
   assert.equal((await (await call('/chat', { cookie, body })).json()).reply, 'Recovered');
 });
+
+test('test account shortcut is opt-in, local-origin only, and uses normal authentication', async (t) => {
+  const disabled = await fixture(t);
+  assert.equal((await disabled.call('/test-login', { body: {} })).status, 404);
+  let credentialsRead = 0;
+  const enabled = await fixture(t, {
+    testCredentials: () => {
+      credentialsRead++;
+      return { email: 'demo@novamart.local', password: 'NovaMartDemo!' };
+    },
+  });
+  assert.equal((await (await enabled.call('/config')).json()).testLogin, true);
+  assert.equal((await enabled.call('/test-login', { body: {} })).status, 403);
+  assert.equal(
+    (
+      await enabled.call('/test-login', {
+        body: {},
+        headers: { Origin: 'https://untrusted.example' },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(credentialsRead, 0);
+  const response = await enabled.call('/test-login', {
+    body: { customerId: 'forged' },
+    headers: { Origin: 'http://127.0.0.1:5173' },
+  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+  const body = await response.json();
+  assert.equal(body.id, 'DEMO-CUSTOMER');
+  assert.equal(body.password, undefined);
+  const invalid = await fixture(t, {
+    testCredentials: () => ({ email: 'demo@novamart.local', password: 'wrong' }),
+  });
+  assert.equal(
+    (await invalid.call('/test-login', { body: {}, headers: { Origin: 'http://127.0.0.1:5173' } }))
+      .status,
+    401,
+  );
+});

@@ -8,7 +8,45 @@ This educational implementation was developed for **Udacity's AWS Agent Engineer
 
 ## Local customer portal (post-submission extension)
 
-The [React + Material UI customer portal](frontend/README.md) runs locally and connects through a local authenticated backend to the existing deployed AgentCore Runtime and project DynamoDB records. A separate offline demo mode is available. It creates no AWS resources and does not alter the submitted Python agent. See its README for setup, architecture, and the boundary for a future live integration.
+The [React + Material UI customer portal](frontend/README.md) runs locally. Its Node backend uses the Python adapter to invoke the deployed AgentCore Runtime and load project customer/order records from DynamoDB. Starting the portal does not provision AWS resources; live requests use the existing AWS deployment.
+
+### Run the frontend and backend
+
+Prerequisites: **Node.js 22.12+**, the repository's Python environment at `.venv` with `requirements.txt` installed, valid local AWS credentials, and a populated root `.env` pointing to available project resources. See [Setup and Configuration](#setup-and-configuration) below for Python and AWS setup. If you use `AWS_PROFILE` or shell-based temporary credentials, configure them in the backend terminal. Credentials stay server-side.
+
+**One-time setup**, from the repository root:
+
+```bash
+cd frontend
+npm ci
+npm run setup:account -- owner@novamart.local CUST-001
+```
+
+Skip `setup:account` if your private account files already exist; it refuses to overwrite them. This creates a local login mapped to the existing project customer `CUST-001`, not a Cognito account. Read your generated password locally from `frontend/.portal-password`. That file and `frontend/.portal.env` are gitignored; keep both private.
+
+**Terminal 1 — backend**, from the repository root:
+
+```bash
+cd frontend
+npm run api
+```
+
+To enable the login screen's **Use test account** button, run `npm run api:test` instead. It signs in using the existing private local account files without exposing the password to the browser. Stop the existing backend first so port 3001 is free. This opt-in shortcut works only from the local portal, is disabled when `NODE_ENV=production`, and must not be enabled on a publicly accessible server. It still uses the real deployed AWS agent, not scripted demo responses.
+
+The backend listens at **http://127.0.0.1:3001** in AgentCore mode. It starts the Python bridge for requests using `.venv/bin/python`; set server-side `PORTAL_PYTHON` if your Python environment is elsewhere. No separate Python server or `agent_orchestrator.py chat` process is needed.
+
+**Terminal 2 — frontend**, from the repository root:
+
+```bash
+cd frontend
+npm run dev -- --strictPort
+```
+
+Open **http://127.0.0.1:5173/** and sign in with your configured email and generated password. Confirm the **LIVE AGENT** badge. Vite forwards `/api` requests to the backend; order cards read DynamoDB and chat invokes the deployed multi-agent system.
+
+Stop either server with **Ctrl+C** in its terminal. Run only one backend on port 3001. If AWS credentials expire, refresh them and restart the backend; missing/deleted AWS resources must be restored, not replaced with demo responses. `npm run preview` serves only the production frontend bundle and does not provide the development API proxy.
+
+For an explicit **offline demo**, use `npm run api:demo` instead of `npm run api` in Terminal 1, with the same frontend command. It shows **LOCAL DEMO**, offers demo credentials, and uses scripted fictional responses without AWS calls. See the [portal README](frontend/README.md) for architecture, tests, and the single-owner authentication limitations, and the [restoration report](docs/RESTORATION.md) for current deployment verification.
 
 ## Key Features
 
