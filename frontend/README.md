@@ -111,8 +111,12 @@ These offline checks establish the integration contract, not successful delivery
 - UI tests: **9 passed**.
 - Node API/provider/subprocess tests: **12 passed**.
 - Python bridge tests: **6 passed**, with **0 AWS transport attempts**.
-- Existing Python compatibility suite: **37 passed**, with **0 real AWS requests**.
+- Existing Python compatibility suite: **38 passed**, with **0 real AWS requests**.
+- Restoration seed safety: **4 passed**.
 - TypeScript/production build, formatting, Python syntax, and `git diff --check`: passed.
 - Local `/api/config` confirms **agentcore** mode.
 
-A live response has not yet been verified: the AWS authentication check returned **ExpiredToken**. Refresh local lab credentials before signing in or testing the deployed agent. The demo previews above are not live-inference evidence.
+
+On November 2, the missing AWS foundation and Runtime were restored. Actual portal login and DynamoDB order loading returned HTTP 200 through the Vite proxy. The deployed agent returned the Premium 60-day return window and retrieved the delivered status of `ORD-59651`. The official Udacity suite passed **120/120**, and a fresh X-Ray trace contained the orchestrator, Inventory, and Communication agents. See [restoration details](../docs/RESTORATION.md).
+
+The previews above remain demo screenshots. Browser automation was unavailable during restoration. Generated chat text can mislabel an estimated delivery date; the structured order view keeps its explicit estimated label. Memory recall and production customer authorization remain separate work.

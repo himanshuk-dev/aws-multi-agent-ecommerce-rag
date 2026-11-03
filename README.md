@@ -138,7 +138,7 @@ WorkflowState separates agent coordination from conversation text. Routing tools
 │   ├── agent_utils.py                 # Terminal trace presentation
 │   └── demo.py                        # Local return-request demonstration
 ├── infrastructure/
-│   ├── starter_stack.yaml            # Foundation starter template; see provisioning caveat
+│   ├── starter_stack.yaml            # Foundation with native S3 Vectors indexes
 │   ├── seed_data.py                   # Fictional customers/orders and policy documents
 │   └── cleanup.py                     # AWS cleanup; dry-run by default
 ├── agentcore/
@@ -208,6 +208,10 @@ The deployment pipeline **prints** the runtime ARN and guardrail ID/version; it 
 
 ### 3. Foundation Infrastructure and Seeding
 
+For the November 2 personal-development restoration and live verification, see
+[restoration details](docs/RESTORATION.md). Submission screenshots are historical
+evidence and may show resources replaced during restoration.
+
 In a Udacity workspace, check the existing stack first. For a new account, the included starter foundation can be deployed with:
 
 ```bash
@@ -219,7 +223,7 @@ aws cloudformation deploy \
   --region us-east-1
 ```
 
-**Provisioning caveat:** the bundled template creates DynamoDB tables, regular S3 buckets, an IAM role, and a log group. Its `VectorStoreBucket` is `AWS::S3::Bucket`, not a native S3 Vectors bucket; it does not create the three vector indexes or export their identifiers. Do not treat this template alone as a complete reproduction of the validated lab infrastructure. Native S3 Vectors resources, their required CloudFormation exports, and appropriate Bedrock/observability permissions must be supplied by the lab foundation or separately provisioned before KB setup. For a fresh environment, extend or replace the foundation outside this documentation change so that `VectorBucket` refers to the native vector bucket and the additional native-vector outputs resolve correctly; the starter's regular S3 bucket cannot substitute for it. [config.py](config.py) expects `VectorBucketArn`, `ReturnsVectorIndex`, `ShippingVectorIndex`, and `WarrantyVectorIndex` exports in addition to the basic resources.
+The foundation template now provisions the three DynamoDB tables, policy-document bucket, a native `AWS::S3Vectors::VectorBucket`, three 1024-dimensional cosine indexes, runtime IAM role, and log group. It exports the native bucket ARN and index names expected by [config.py](config.py). The vector indexes mark Bedrock text and metadata as non-filterable. Deploying this stack does not itself create or synchronize the Bedrock Knowledge Bases.
 
 With the foundation available, inspect configuration and seed only if required:
 
@@ -228,7 +232,7 @@ python config.py
 python infrastructure/seed_data.py
 ```
 
-The seed script writes fictional customer/order records and uploads documents under `policies/returns/`, `policies/shipping/`, and `policies/warranty/`. It assumes stack `udacity-agentcore` in `us-east-1`, uses exported shell settings rather than loading `.env` itself, and generates order dates and some order IDs. Use current seeded records when testing; historical screenshots may show different IDs. It also attempts to create a test Cognito user if a User Pool export exists; this does not authenticate the application endpoint.
+The seed script creates fictional customers and the documented `CUST-001` orders `ORD-12142` (return requested) and `ORD-59651` (delivered). It resolves the policy bucket from CloudFormation exports and uploads the unchanged policies under the three domain prefixes. Conditional writes preserve existing customers and orders on repeat runs. Dates are relative to first creation; restoring these fictional records does not recover deleted records. The script uses shell `AWS_REGION` and `PROJECT_NAME` settings and does not load `.env` itself or create a Cognito user.
 
 ### 4. Knowledge Bases and Synchronization
 
@@ -352,7 +356,7 @@ All screenshots are historical captures of the fictional dataset. Some show inte
 | [19 — Live local orchestration execution](screenshots/19_orchestrator_test_passed.png) | Execution of `python src/agent_orchestrator.py test` with three completed scenarios and published trace IDs. Completion does not establish behavioral success: the return scenario reports an inventory lookup error and the math scenario refuses the calculation. |
 | [20 — Local-test X-Ray Service Map](screenshots/20_xray_service_map.png) | Connected NovaMart orchestrator, Inventory, Refund, Policy, Communication, and all three Knowledge Base nodes; trace connectivity does not establish successful business outcomes. |
 
-The storage captures show the native bucket `udacity-agentcore-policy-vectors`. They establish the actual KB backing store and index names, but do not resolve its mismatch with the foundation stack's regular S3 `VectorStoreBucket` described above.
+The storage captures show the native bucket `udacity-agentcore-policy-vectors`. They are historical submission evidence. The November 2 restoration uses the native vector bucket exported by the updated foundation; historical screenshots do not verify that new deployment.
 
 ## Observability
 
